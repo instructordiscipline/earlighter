@@ -1,0 +1,13 @@
+{
+  "appId": "com.earlighter.app",
+  "appName": "Earlighter",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "backgroundColor": "#070b16",
+  "android": {
+    "backgroundColor": "#070b16",
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

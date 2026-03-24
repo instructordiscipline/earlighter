@@ -1,0 +1,22 @@
+{
+  "name": "earlighter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline-first audiobook player and knowledge capture app for Android built with Capacitor.",
+  "scripts": {
+    "start": "python3 -m http.server 4173 -d www",
+    "build": "echo 'Static web assets are already in www/'",
+    "sync": "npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/haptics": "^8.0.0",
+    "@capacitor/local-notifications": "^8.0.0",
+    "@capacitor/preferences": "^8.0.0",
+    "@capawesome/capacitor-file-picker": "^8.0.0"
+  }
+}
