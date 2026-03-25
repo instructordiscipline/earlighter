@@ -586,18 +586,37 @@ function updateNoteLine(lineId, rawValue) {
   const line = lines[index];
   if (!line) return;
 
+  const currentIndent = line.indent || 0;
+  let nextIndent = currentIndent;
+  let nextText = rawValue;
+  let shouldRerender = false;
+
   const leadingSpaces = rawValue.match(/^ +/)?.[0]?.length || 0;
-  const requestedIndent = Math.floor(leadingSpaces / 2);
-  const computedIndent = clampIndentForIndex(lines, index, requestedIndent);
   const trimmedText = rawValue.replace(/^ +/, '');
-  const indentChanged = computedIndent !== (line.indent || 0);
-  line.indent = computedIndent;
-  line.text = trimmedText;
+
+  // Preserve indentation while typing. Only interpret leading spaces as an
+  // indent shortcut when the user is clearly adding them at the start.
+  if (leadingSpaces >= 2) {
+    const previousText = line.text || '';
+    const shortcutTriggered =
+      previousText === '' ||
+      rawValue.trimStart() === previousText ||
+      previousText.startsWith(trimmedText);
+
+    if (shortcutTriggered) {
+      nextIndent = clampIndentForIndex(lines, index, Math.floor(leadingSpaces / 2));
+      nextText = trimmedText;
+      shouldRerender = nextIndent !== currentIndent;
+    }
+  }
+
+  line.indent = nextIndent;
+  line.text = nextText;
   persistState();
 
-  if (indentChanged) {
+  if (shouldRerender) {
     pendingFocusLineId = lineId;
-    pendingFocusCaret = trimmedText.length;
+    pendingFocusCaret = 0;
     renderNotesDocument();
   }
 }
@@ -730,7 +749,7 @@ function bindEvents() {
     const touch = event.touches[0];
     swipeStartX = touch.clientX;
     swipeStartY = touch.clientY;
-    edgeSwipeActive = !el.appRoot.classList.contains('sidebar-open') && touch.clientX <= 24;
+    edgeSwipeActive = !el.appRoot.classList.contains('sidebar-open') && touch.clientX <= 120;
   }, { passive: true });
 
   document.addEventListener('touchmove', (event) => {
@@ -738,7 +757,7 @@ function bindEvents() {
     const touch = event.touches[0];
     const dx = touch.clientX - swipeStartX;
     const dy = Math.abs(touch.clientY - swipeStartY);
-    if (dx > 56 && dy < 32) {
+    if (dx > 28 && dy < 48) {
       openSidebar();
       edgeSwipeActive = false;
     }
