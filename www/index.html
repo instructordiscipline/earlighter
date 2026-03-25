@@ -112,10 +112,11 @@
 
         <section class="view" id="notesView">
           <div class="notes-screen">
-            <div class="notes-title-block">
-              <h1 id="notesBookTitle">No audiobook selected</h1>
-            </div>
-            <div class="mini-player-card">
+            <div class="notes-sticky-shell">
+              <div class="notes-title-block">
+                <h1 id="notesBookTitle">No audiobook selected</h1>
+              </div>
+              <div class="mini-player-card">
               <div class="time-row compact">
                 <span id="notesCurrentTime">00:00</span>
                 <span id="notesRemainingTime">-00:00</span>
@@ -138,6 +139,8 @@
                 <button class="clip-button compact" data-clip="180" aria-label="Save last 3 minutes"><svg class="clip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h8l4 4v12H7zM15 4v4h4M9 13h6M9 17h6" /></svg><span>3m</span></button>
                 <button class="clip-button compact" data-clip="300" aria-label="Save last 5 minutes"><svg class="clip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h8l4 4v12H7zM15 4v4h4M9 13h6M9 17h6" /></svg><span>5m</span></button>
               </div>
+            </div>
+
             </div>
 
             <div class="notes-document" id="notesDocument"></div>

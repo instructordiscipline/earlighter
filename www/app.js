@@ -4,6 +4,7 @@ const DB_VERSION = 1;
 const STORE_BLOBS = 'book-blobs';
 const SAVE_THROTTLE_MS = 1200;
 const MAX_INDENT = 8;
+const SWIPE_THRESHOLD = 42;
 const INDENT_STEP_PX = 24;
 
 const $ = (selector) => document.querySelector(selector);
@@ -79,7 +80,8 @@ let pendingFocusCaret = null;
 let libraryDialogMode = 'setup';
 let swipeStartX = null;
 let swipeStartY = null;
-let dragPreview = { targetId: null, indent: 0 };
+let dragPreview = { targetId: null, indent: 0, placement: 'before' };
+let noteDragActive = false;
 
 const appState = loadState();
 
@@ -501,6 +503,11 @@ function focusLine(lineId, caret = null) {
   textarea.setSelectionRange(position, position);
 }
 
+function paintRangeProgress(range, ratio) {
+  const pct = `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`;
+  range.style.background = `linear-gradient(90deg, var(--progress-fill) 0%, var(--progress-fill-strong) ${pct}, rgba(143, 166, 255, 0.18) ${pct}, rgba(143, 166, 255, 0.18) 100%)`;
+}
+
 function updateProgressUI() {
   const duration = Number.isFinite(el.player.duration) ? el.player.duration : (currentBook()?.durationMs || 0) / 1000;
   const current = Number.isFinite(el.player.currentTime) ? el.player.currentTime : (currentBook()?.lastPositionMs || 0) / 1000;
@@ -508,6 +515,8 @@ function updateProgressUI() {
   const rangeValue = Math.round(ratio * 1000);
   el.progressRange.value = rangeValue;
   el.notesProgressRange.value = rangeValue;
+  paintRangeProgress(el.progressRange, ratio);
+  paintRangeProgress(el.notesProgressRange, ratio);
   el.currentTime.textContent = formatTime(current);
   el.remainingTime.textContent = duration > 0 ? `-${formatTime(Math.max(0, duration - current))}` : '-00:00';
   el.notesCurrentTime.textContent = formatTime(current);
@@ -632,14 +641,31 @@ function changeLineIndent(lineId, delta) {
   renderNotesDocument();
 }
 
-function moveLine(dragId, targetId, nextIndent = null) {
+function endOfSubtreeIndex(lines, index) {
+  const baseIndent = lines[index]?.indent || 0;
+  let end = index + 1;
+  while (end < lines.length && (lines[end]?.indent || 0) > baseIndent) end += 1;
+  return end;
+}
+
+function moveLine(dragId, targetId, nextIndent = null, placement = 'before') {
   const lines = getNotesDoc();
   const dragIndex = lines.findIndex((line) => line.id === dragId);
   const targetIndex = lines.findIndex((line) => line.id === targetId);
   if (dragIndex < 0 || targetIndex < 0) return;
+
   const [moved] = lines.splice(dragIndex, 1);
-  const adjustedTargetIndex = dragIndex < targetIndex ? targetIndex - 1 : targetIndex;
-  const finalIndex = Math.max(0, adjustedTargetIndex);
+  let insertionIndex;
+
+  if (placement === 'after') {
+    const adjustedTargetIndex = lines.findIndex((line) => line.id === targetId);
+    insertionIndex = adjustedTargetIndex >= 0 ? endOfSubtreeIndex(lines, adjustedTargetIndex) : lines.length;
+  } else {
+    const adjustedTargetIndex = lines.findIndex((line) => line.id === targetId);
+    insertionIndex = adjustedTargetIndex >= 0 ? adjustedTargetIndex : lines.length;
+  }
+
+  const finalIndex = Math.max(0, Math.min(lines.length, insertionIndex));
   lines.splice(finalIndex, 0, moved);
   const desiredIndent = nextIndent != null ? nextIndent : moved.indent || 0;
   moved.indent = clampIndentForIndex(lines, finalIndex, desiredIndent);
@@ -732,9 +758,9 @@ function closeLibrarySetup() {
 }
 
 function clearDragPreview() {
-  dragPreview = { targetId: null, indent: 0 };
+  dragPreview = { targetId: null, indent: 0, placement: 'before' };
   [...el.notesDocument.querySelectorAll('.note-line')].forEach((row) => {
-    row.classList.remove('drag-preview');
+    row.classList.remove('drag-preview', 'drag-preview-before', 'drag-preview-after');
     row.style.removeProperty('--preview-indent');
   });
 }
@@ -743,30 +769,51 @@ function bindEvents() {
   el.openSidebarBtn.addEventListener('click', openSidebar);
   el.sidebarBackdrop.addEventListener('click', closeSidebar);
 
-  let edgeSwipeActive = false;
+  let gestureHandled = false;
 
   document.addEventListener('touchstart', (event) => {
+    if (event.target.closest('.drag-handle')) {
+      noteDragActive = true;
+      return;
+    }
+    if (noteDragActive) return;
     const touch = event.touches[0];
     swipeStartX = touch.clientX;
     swipeStartY = touch.clientY;
-    edgeSwipeActive = !el.appRoot.classList.contains('sidebar-open') && touch.clientX <= 120;
+    gestureHandled = false;
   }, { passive: true });
 
   document.addEventListener('touchmove', (event) => {
-    if (!edgeSwipeActive || swipeStartX == null || swipeStartY == null) return;
+    if (noteDragActive || gestureHandled || swipeStartX == null || swipeStartY == null || el.appRoot.classList.contains('sidebar-open')) return;
     const touch = event.touches[0];
     const dx = touch.clientX - swipeStartX;
     const dy = Math.abs(touch.clientY - swipeStartY);
-    if (dx > 28 && dy < 48) {
-      openSidebar();
-      edgeSwipeActive = false;
+    if (dy > 42 || Math.abs(dx) < SWIPE_THRESHOLD) return;
+
+    const startedOnLeftHalf = swipeStartX <= (window.innerWidth / 2);
+    const onNotes = appState.ui.activeTab === 'notes';
+
+    if (dx > 0) {
+      if (startedOnLeftHalf) {
+        openSidebar();
+      } else if (!onNotes) {
+        setActiveTab('notes');
+      }
+      gestureHandled = true;
+      return;
+    }
+
+    if (dx < 0 && onNotes) {
+      setActiveTab('player');
+      gestureHandled = true;
     }
   }, { passive: true });
 
   document.addEventListener('touchend', () => {
-    edgeSwipeActive = false;
+    gestureHandled = false;
     swipeStartX = null;
     swipeStartY = null;
+    noteDragActive = false;
   }, { passive: true });
 
   el.sidebar.addEventListener('touchstart', (event) => {
@@ -951,11 +998,13 @@ function bindEvents() {
     const row = handle.closest('.note-line');
     if (!row) return;
     draggedLineId = row.dataset.lineId;
+    noteDragActive = true;
     event.dataTransfer.effectAllowed = 'move';
   });
 
   el.notesDocument.addEventListener('dragend', () => {
     draggedLineId = null;
+    noteDragActive = false;
     clearDragPreview();
   });
 
@@ -964,25 +1013,31 @@ function bindEvents() {
     const row = event.target.closest('.note-line');
     if (!row) return;
     const docRect = el.notesDocument.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
     const targetId = row.dataset.lineId;
     const lines = getNotesDoc();
     const targetIndex = lines.findIndex((line) => line.id === targetId);
+    if (targetIndex < 0) return;
+
+    const placement = event.clientY > (rowRect.top + rowRect.height / 2) ? 'after' : 'before';
+    const previewIndexBase = placement === 'after' ? endOfSubtreeIndex(lines, targetIndex) : targetIndex;
     const dragIndex = lines.findIndex((line) => line.id === draggedLineId);
-    const previewIndex = dragIndex >= 0 && dragIndex < targetIndex ? Math.max(0, targetIndex - 1) : Math.max(0, targetIndex);
+    const previewIndex = dragIndex >= 0 && dragIndex < previewIndexBase ? Math.max(0, previewIndexBase - 1) : Math.max(0, previewIndexBase);
     const relativeX = Math.max(0, event.clientX - docRect.left - 24);
     const requestedIndent = Math.round(relativeX / INDENT_STEP_PX);
     const indent = clampIndentForIndex(lines, previewIndex, requestedIndent);
     clearDragPreview();
-    row.classList.add('drag-preview');
+    row.classList.add('drag-preview', placement === 'after' ? 'drag-preview-after' : 'drag-preview-before');
     row.style.setProperty('--preview-indent', String(indent));
-    dragPreview = { targetId, indent };
+    dragPreview = { targetId, indent, placement };
   });
 
   el.notesDocument.addEventListener('drop', (event) => {
     event.preventDefault();
     if (!draggedLineId || !dragPreview.targetId) return;
-    moveLine(draggedLineId, dragPreview.targetId, dragPreview.indent);
+    moveLine(draggedLineId, dragPreview.targetId, dragPreview.indent, dragPreview.placement);
     draggedLineId = null;
+    noteDragActive = false;
     clearDragPreview();
   });
 

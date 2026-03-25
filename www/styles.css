@@ -11,6 +11,8 @@
   --soft: #7380a3;
   --brand: #9bb0ff;
   --brand-strong: #dce4ff;
+  --progress-fill: #6f8cff;
+  --progress-fill-strong: #d9e4ff;
   --indent-step: 24px;
   --shadow-lg: 0 28px 70px rgba(2, 6, 20, 0.58);
   --shadow-md: 0 18px 42px rgba(3, 8, 24, 0.36);
@@ -358,12 +360,23 @@ p {
 }
 
 .notes-title-block {
-  padding-top: 6px;
+  padding-top: 0;
+  padding-bottom: 10px;
 }
 
 .mini-player-card {
   padding: 14px 14px 12px;
   border-radius: 24px;
+}
+
+.notes-sticky-shell {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  padding-top: 6px;
+  background: linear-gradient(180deg, rgba(7, 11, 22, 0.98) 0%, rgba(7, 11, 22, 0.92) 82%, rgba(7, 11, 22, 0) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .time-row.compact {
@@ -398,7 +411,7 @@ p {
 .notes-document {
   min-height: calc(100vh - 320px);
   border-radius: 0;
-  padding: 8px 0 28px;
+  padding: 12px 0 28px;
   overflow: visible;
   background: transparent;
   border: 0;
@@ -430,8 +443,6 @@ p {
   content: "";
   position: absolute;
   left: calc(20px + (var(--preview-indent, 0) * var(--indent-step)));
-  top: 5px;
-  bottom: 5px;
   width: 2px;
   border-radius: 999px;
   background: rgba(155, 176, 255, 0.85);
@@ -441,11 +452,28 @@ p {
   content: "";
   position: absolute;
   left: calc(16px + (var(--preview-indent, 0) * var(--indent-step)));
-  top: 12px;
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: rgba(155, 176, 255, 0.95);
+}
+
+.note-line.drag-preview-before::before {
+  top: 5px;
+  bottom: 50%;
+}
+
+.note-line.drag-preview-before::after {
+  top: 12px;
+}
+
+.note-line.drag-preview-after::before {
+  top: 50%;
+  bottom: 5px;
+}
+
+.note-line.drag-preview-after::after {
+  bottom: 12px;
 }
 
 .drag-handle {
