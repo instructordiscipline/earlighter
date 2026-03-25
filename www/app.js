@@ -196,6 +196,15 @@ function getNotesDoc(book = currentBook()) {
   return book.notesDoc;
 }
 
+function maxIndentForIndex(lines, index) {
+  if (index <= 0) return 0;
+  return Math.min(MAX_INDENT, ((lines[index - 1]?.indent) || 0) + 1);
+}
+
+function clampIndentForIndex(lines, index, desiredIndent) {
+  return Math.max(0, Math.min(maxIndentForIndex(lines, index), desiredIndent));
+}
+
 function getDb() {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
@@ -398,7 +407,7 @@ function updateBookUI() {
   el.bookTitle.textContent = book?.title || 'No audiobook selected';
   el.notesBookTitle.textContent = book?.title || 'No audiobook selected';
   el.coverArt.textContent = book?.coverLabel || 'EA';
-  el.coverHint.textContent = book ? 'Tap cover to import another MP3' : 'Tap to import an MP3';
+  el.coverHint.textContent = '';
   el.libraryFolderLabel.textContent = appState.settings.libraryFolderName.trim() || 'No library folder set yet';
   el.transcriptionModeSelect.value = appState.settings.transcriptionMode;
   el.rememberSpeedCheckbox.checked = !!appState.settings.rememberSpeedPerBook;
@@ -573,11 +582,13 @@ function removeNoteLine(lineId) {
 
 function updateNoteLine(lineId, rawValue) {
   const lines = getNotesDoc();
-  const line = lines.find((item) => item.id === lineId);
+  const index = lines.findIndex((item) => item.id === lineId);
+  const line = lines[index];
   if (!line) return;
 
   const leadingSpaces = rawValue.match(/^ +/)?.[0]?.length || 0;
-  const computedIndent = Math.max(0, Math.min(MAX_INDENT, Math.floor(leadingSpaces / 2)));
+  const requestedIndent = Math.floor(leadingSpaces / 2);
+  const computedIndent = clampIndentForIndex(lines, index, requestedIndent);
   const trimmedText = rawValue.replace(/^ +/, '');
   const indentChanged = computedIndent !== (line.indent || 0);
   line.indent = computedIndent;
@@ -592,9 +603,11 @@ function updateNoteLine(lineId, rawValue) {
 }
 
 function changeLineIndent(lineId, delta) {
-  const line = getNotesDoc().find((item) => item.id === lineId);
+  const lines = getNotesDoc();
+  const index = lines.findIndex((item) => item.id === lineId);
+  const line = lines[index];
   if (!line) return;
-  line.indent = Math.max(0, Math.min(MAX_INDENT, (line.indent || 0) + delta));
+  line.indent = clampIndentForIndex(lines, index, (line.indent || 0) + delta);
   persistState();
   pendingFocusLineId = lineId;
   renderNotesDocument();
@@ -607,8 +620,10 @@ function moveLine(dragId, targetId, nextIndent = null) {
   if (dragIndex < 0 || targetIndex < 0) return;
   const [moved] = lines.splice(dragIndex, 1);
   const adjustedTargetIndex = dragIndex < targetIndex ? targetIndex - 1 : targetIndex;
-  lines.splice(Math.max(0, adjustedTargetIndex), 0, moved);
-  if (nextIndent != null) moved.indent = Math.max(0, Math.min(MAX_INDENT, nextIndent));
+  const finalIndex = Math.max(0, adjustedTargetIndex);
+  lines.splice(finalIndex, 0, moved);
+  const desiredIndent = nextIndent != null ? nextIndent : moved.indent || 0;
+  moved.indent = clampIndentForIndex(lines, finalIndex, desiredIndent);
   persistState();
   pendingFocusLineId = dragId;
   renderNotesDocument();
@@ -708,6 +723,32 @@ function clearDragPreview() {
 function bindEvents() {
   el.openSidebarBtn.addEventListener('click', openSidebar);
   el.sidebarBackdrop.addEventListener('click', closeSidebar);
+
+  let edgeSwipeActive = false;
+
+  document.addEventListener('touchstart', (event) => {
+    const touch = event.touches[0];
+    swipeStartX = touch.clientX;
+    swipeStartY = touch.clientY;
+    edgeSwipeActive = !el.appRoot.classList.contains('sidebar-open') && touch.clientX <= 24;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (event) => {
+    if (!edgeSwipeActive || swipeStartX == null || swipeStartY == null) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - swipeStartX;
+    const dy = Math.abs(touch.clientY - swipeStartY);
+    if (dx > 56 && dy < 32) {
+      openSidebar();
+      edgeSwipeActive = false;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    edgeSwipeActive = false;
+    swipeStartX = null;
+    swipeStartY = null;
+  }, { passive: true });
 
   el.sidebar.addEventListener('touchstart', (event) => {
     const touch = event.touches[0];
@@ -904,12 +945,18 @@ function bindEvents() {
     const row = event.target.closest('.note-line');
     if (!row) return;
     const docRect = el.notesDocument.getBoundingClientRect();
+    const targetId = row.dataset.lineId;
+    const lines = getNotesDoc();
+    const targetIndex = lines.findIndex((line) => line.id === targetId);
+    const dragIndex = lines.findIndex((line) => line.id === draggedLineId);
+    const previewIndex = dragIndex >= 0 && dragIndex < targetIndex ? Math.max(0, targetIndex - 1) : Math.max(0, targetIndex);
     const relativeX = Math.max(0, event.clientX - docRect.left - 24);
-    const indent = Math.max(0, Math.min(MAX_INDENT, Math.round(relativeX / INDENT_STEP_PX)));
+    const requestedIndent = Math.round(relativeX / INDENT_STEP_PX);
+    const indent = clampIndentForIndex(lines, previewIndex, requestedIndent);
     clearDragPreview();
     row.classList.add('drag-preview');
     row.style.setProperty('--preview-indent', String(indent));
-    dragPreview = { targetId: row.dataset.lineId, indent };
+    dragPreview = { targetId, indent };
   });
 
   el.notesDocument.addEventListener('drop', (event) => {

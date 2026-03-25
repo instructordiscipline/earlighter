@@ -169,8 +169,7 @@ p {
 }
 
 .cover-hint {
-  color: var(--soft);
-  font-size: 0.95rem;
+  display: none;
 }
 
 .player-meta {
@@ -279,6 +278,13 @@ p {
   gap: 2px;
 }
 
+.transport-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: none;
+}
+
 .transport-button:active,
 .bottom-tab:active,
 .sidebar-tab:active,
@@ -295,11 +301,6 @@ p {
 .clip-button:focus-visible {
   background: rgba(255, 255, 255, 0.075);
   border-color: var(--line-strong);
-}
-
-.transport-symbol {
-  font-size: 1.15rem;
-  line-height: 1;
 }
 
 .transport-label {
@@ -321,6 +322,12 @@ p {
   font-size: 0.84rem;
   font-weight: 650;
   color: var(--muted);
+  gap: 6px;
+}
+
+.clip-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .notes-screen {
@@ -406,7 +413,18 @@ p {
   bottom: 5px;
   width: 2px;
   border-radius: 999px;
-  background: rgba(155, 176, 255, 0.7);
+  background: rgba(155, 176, 255, 0.85);
+}
+
+.note-line.drag-preview::after {
+  content: "";
+  position: absolute;
+  left: calc(16px + (var(--preview-indent, 0) * var(--indent-step)));
+  top: 12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(155, 176, 255, 0.95);
 }
 
 .drag-handle {
@@ -446,7 +464,9 @@ p {
   line-height: 1.55;
   font-size: 1rem;
   color: var(--text);
-  background: transparent;
+  background: transparent !important;
+  -webkit-appearance: none;
+  appearance: none;
   padding: 0;
   margin: 0;
 }
