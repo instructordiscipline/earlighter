@@ -67,11 +67,18 @@
           <button class="icon-button" id="openSidebarBtn" aria-label="Open menu">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
+          <div class="topbar-middle">
+            <button class="icon-button mini-collapse-tab hidden" id="miniCollapseBtn" type="button" aria-label="Collapse mini player" aria-expanded="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5" /></svg>
+            </button>
+          </div>
           <button class="icon-button speed-button" id="openSpeedBtn" aria-label="Playback speed">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17l2.5-2.5 2 1L15 12l4 1M8.5 9.5A1.5 1.5 0 1 0 8.5 6.5A1.5 1.5 0 1 0 8.5 9.5ZM7 11l2.5 1 1.5 2.5M11 11l2 1" /></svg>
+            <img src="./runner-speed.png" class="runner-image" alt="" />
           </button>
         </header>
 
+        <div class="views-viewport" id="viewsViewport">
+          <div class="views-track" id="viewsTrack">
         <section class="view active" id="playerView">
           <div class="player-stage">
             <button class="cover-button" id="coverButton" aria-label="Import or change audiobook">
@@ -116,7 +123,6 @@
               <div class="notes-title-block">
                 <h1 id="notesBookTitle">No audiobook selected</h1>
               </div>
-              <button class="mini-collapse-tab" id="miniCollapseBtn" type="button" aria-label="Collapse mini player" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5" /></svg></button>
               <div class="mini-player-card">
               <div class="time-row compact">
                 <span id="notesCurrentTime">00:00</span>
@@ -147,6 +153,8 @@
             <div class="notes-document" id="notesDocument"></div>
           </div>
         </section>
+          </div>
+        </div>
 
         <nav class="bottom-nav">
           <button class="bottom-tab active" data-tab="player">

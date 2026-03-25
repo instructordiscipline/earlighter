@@ -23,6 +23,9 @@ const el = {
   transcriptionModeSelect: $('#transcriptionModeSelect'),
   rememberSpeedCheckbox: $('#rememberSpeedCheckbox'),
 
+  screen: $('.screen'),
+  viewsViewport: $('#viewsViewport'),
+  viewsTrack: $('#viewsTrack'),
   playerView: $('#playerView'),
   notesView: $('#notesView'),
   bottomTabs: [...document.querySelectorAll('.bottom-tab')],
@@ -84,6 +87,9 @@ let swipeStartX = null;
 let swipeStartY = null;
 let dragPreview = { targetId: null, indent: 0, placement: 'before' };
 let noteDragActive = false;
+let swipeMode = null;
+let swipeSidebarCandidate = false;
+let pageSwipeOffset = 0;
 
 const appState = loadState();
 
@@ -380,6 +386,7 @@ async function loadBook(bookId) {
 }
 
 function openSidebar() {
+  if (el.speedDialog?.open) return;
   el.appRoot.classList.add('sidebar-open');
 }
 
@@ -395,12 +402,24 @@ function setSidebarTab(tab, persist = true) {
   el.settingsPanel.classList.toggle('active', tab === 'settings');
 }
 
-function setActiveTab(tab, persist = true) {
+function applyViewTransform(immediate = false, dragOffsetPx = 0) {
+  const width = el.viewsViewport?.clientWidth || el.screen?.clientWidth || window.innerWidth || 1;
+  const base = appState.ui.activeTab === 'notes' ? -width : 0;
+  const next = Math.max(-width, Math.min(0, base + dragOffsetPx));
+  if (!el.viewsTrack) return;
+  el.viewsTrack.classList.toggle('dragging', immediate || swipeMode === 'page');
+  el.viewsTrack.style.transform = `translate3d(${next}px, 0, 0)`;
+  if (immediate) requestAnimationFrame(() => el.viewsTrack.classList.remove('dragging'));
+}
+
+function setActiveTab(tab, persist = true, immediate = false) {
   appState.ui.activeTab = tab;
   if (persist) persistState();
   el.bottomTabs.forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
   el.playerView.classList.toggle('active', tab === 'player');
   el.notesView.classList.toggle('active', tab === 'notes');
+  el.miniCollapseBtn?.classList.toggle('hidden', tab !== 'notes');
+  applyViewTransform(immediate, 0);
 }
 
 function applyNotesMiniState(persist = true) {
@@ -725,7 +744,7 @@ function renderApp() {
   renderLibrary();
   renderNotesDocument();
   updateProgressUI();
-  setActiveTab(appState.ui.activeTab || 'player', false);
+  setActiveTab(appState.ui.activeTab || 'player', false, true);
   setSidebarTab(appState.ui.sidebarTab || 'library', false);
   applyNotesMiniState(false);
   syncPlayButtons(!el.player.paused);
@@ -794,53 +813,95 @@ function bindEvents() {
   let gestureHandled = false;
 
   document.addEventListener('touchstart', (event) => {
-    if (event.target.closest('.drag-handle, .note-bullet')) {
+    const target = event.target;
+    if (target.closest('.sheet-dialog') || target.closest('dialog') || el.speedDialog?.open || el.appRoot.classList.contains('sidebar-open')) {
+      swipeStartX = null;
+      swipeStartY = null;
+      swipeMode = null;
+      return;
+    }
+    if (target.closest('.drag-handle, .note-bullet')) {
       noteDragActive = true;
       return;
     }
-    if (noteDragActive) return;
+    if (target.closest('textarea, input, select')) {
+      swipeStartX = null;
+      swipeStartY = null;
+      swipeMode = null;
+      return;
+    }
     const touch = event.touches[0];
     swipeStartX = touch.clientX;
     swipeStartY = touch.clientY;
+    swipeMode = null;
+    swipeSidebarCandidate = appState.ui.activeTab === 'player' && swipeStartX <= (window.innerWidth / 2);
     gestureHandled = false;
+    pageSwipeOffset = 0;
   }, { passive: true });
 
   document.addEventListener('touchmove', (event) => {
-    if (noteDragActive || gestureHandled || swipeStartX == null || swipeStartY == null || el.appRoot.classList.contains('sidebar-open')) return;
+    if (noteDragActive || gestureHandled || swipeStartX == null || swipeStartY == null || el.appRoot.classList.contains('sidebar-open') || el.speedDialog?.open) return;
     const touch = event.touches[0];
     const dx = touch.clientX - swipeStartX;
-    const dy = Math.abs(touch.clientY - swipeStartY);
-    if (dy > 42 || Math.abs(dx) < SWIPE_THRESHOLD) return;
+    const dy = touch.clientY - swipeStartY;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
 
-    const startedOnLeftHalf = swipeStartX <= (window.innerWidth / 2);
-    const onNotes = appState.ui.activeTab === 'notes';
-
-    if (onNotes) {
-      if (dx > 0) {
-        setActiveTab('player');
-        gestureHandled = true;
+    if (!swipeMode) {
+      if (absDx < 10) return;
+      if (absDy > absDx + 8) {
+        swipeMode = 'vertical';
+        return;
       }
+      const onNotes = appState.ui.activeTab === 'notes';
+      const wantsPage = (appState.ui.activeTab === 'player' && dx < 0) || (onNotes && dx > 0);
+      if (wantsPage) {
+        swipeMode = 'page';
+      } else if (swipeSidebarCandidate && dx > SWIPE_THRESHOLD && appState.ui.activeTab === 'player') {
+        swipeMode = 'sidebar';
+      } else {
+        return;
+      }
+    }
+
+    if (swipeMode === 'page') {
+      event.preventDefault();
+      const width = el.viewsViewport?.clientWidth || window.innerWidth || 1;
+      const limitedDx = Math.max(-width, Math.min(width, dx));
+      pageSwipeOffset = limitedDx;
+      applyViewTransform(false, limitedDx);
       return;
     }
 
-    if (dx < 0) {
-      setActiveTab('notes');
-      gestureHandled = true;
-      return;
-    }
-
-    if (dx > 0 && startedOnLeftHalf) {
+    if (swipeMode === 'sidebar' && dx > 56 && absDy < 42) {
       openSidebar();
       gestureHandled = true;
+      swipeMode = 'sidebar-opened';
     }
-  }, { passive: true });
+  }, { passive: false });
 
   document.addEventListener('touchend', () => {
+    if (swipeMode === 'page') {
+      const width = el.viewsViewport?.clientWidth || window.innerWidth || 1;
+      const shouldCommit = Math.abs(pageSwipeOffset) > width * 0.22;
+      if (appState.ui.activeTab === 'player') {
+        setActiveTab(shouldCommit ? 'notes' : 'player');
+      } else {
+        setActiveTab(shouldCommit ? 'player' : 'notes');
+      }
+    } else if (swipeMode && swipeMode !== 'vertical') {
+      applyViewTransform(false, 0);
+    }
     gestureHandled = false;
     swipeStartX = null;
     swipeStartY = null;
+    swipeMode = null;
+    swipeSidebarCandidate = false;
+    pageSwipeOffset = 0;
     noteDragActive = false;
   }, { passive: true });
+
+  window.addEventListener('resize', () => applyViewTransform(true, 0));
 
   el.sidebar.addEventListener('touchstart', (event) => {
     const touch = event.touches[0];
@@ -870,13 +931,20 @@ function bindEvents() {
   });
 
   el.coverButton.addEventListener('click', importBook);
-  el.openSpeedBtn.addEventListener('click', () => el.speedDialog.showModal());
+  el.openSpeedBtn.addEventListener('click', () => {
+    if (el.appRoot.classList.contains('sidebar-open')) return;
+    el.appRoot.classList.add('sheet-open');
+    el.speedDialog.showModal();
+  });
   el.speedSlider.addEventListener('input', () => setPlaybackSpeed(el.speedSlider.value));
 
   el.speedDialog.addEventListener('click', (event) => {
     const rect = el.speedDialog.querySelector('.sheet-card').getBoundingClientRect();
     const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
     if (!inside) el.speedDialog.close();
+  });
+  el.speedDialog.addEventListener('close', () => {
+    el.appRoot.classList.remove('sheet-open');
   });
 
   el.changeLibraryFolderBtn.addEventListener('click', () => openLibrarySetup(true, 'rename'));

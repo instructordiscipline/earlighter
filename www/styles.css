@@ -105,10 +105,16 @@ p {
 }
 
 .screen-topbar {
+  display: grid;
+  grid-template-columns: 46px 1fr 46px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.topbar-middle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  justify-content: center;
 }
 
 .icon-button {
@@ -129,21 +135,49 @@ p {
   margin-left: auto;
 }
 
+.runner-image {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+
+.views-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.views-track {
+  display: flex;
+  width: 200%;
+  height: 100%;
+  transform: translate3d(0, 0, 0);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.views-track.dragging {
+  transition: none;
+}
+
 .view {
-  display: none;
+  display: block;
+  flex: 0 0 50%;
+  width: 50%;
+  min-height: 0;
 }
 
 .view.active {
   display: block;
-  flex: 1 1 auto;
-  min-height: 0;
 }
 
-#playerView.active {
+#playerView {
   overflow: hidden;
 }
 
-#notesView.active {
+#notesView {
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -592,6 +626,11 @@ p {
   pointer-events: auto;
 }
 
+.app.sheet-open .sidebar,
+.app.sheet-open .sidebar-backdrop {
+  pointer-events: none;
+}
+
 .sidebar-header,
 .sidebar-brand,
 .sidebar-tabs,
@@ -873,14 +912,12 @@ p {
 }
 
 
-#notesView.mini-collapsed .notes-title-block,
 #notesView.mini-collapsed .mini-player-card {
   display: none;
 }
 
 #notesView.mini-collapsed .notes-sticky-shell {
-  min-height: 20px;
-  padding-top: 2px;
+  padding-top: 4px;
   background: linear-gradient(180deg, rgba(7, 11, 22, 0.98) 0%, rgba(7, 11, 22, 0.72) 72%, rgba(7, 11, 22, 0) 100%);
 }
 
@@ -890,11 +927,8 @@ p {
 }
 
 .mini-collapse-tab {
-  position: absolute;
-  top: 10px;
-  right: 4px;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border-radius: 14px;
   display: inline-flex;
   align-items: center;
@@ -904,6 +938,14 @@ p {
   border: 1px solid rgba(152, 176, 255, 0.12);
   box-shadow: var(--shadow-md);
   z-index: 12;
+  opacity: 1;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.mini-collapse-tab.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.92);
 }
 
 .mini-collapse-tab svg {
@@ -918,10 +960,6 @@ p {
 
 .notes-sticky-shell {
   position: sticky;
-}
-
-.notes-sticky-shell .mini-player-card {
-  margin-right: 46px;
 }
 
 .note-bullet {
