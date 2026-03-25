@@ -18,9 +18,6 @@
               <div class="sidebar-subtitle">Offline library</div>
             </div>
           </div>
-          <button class="icon-button sidebar-close" id="closeSidebarBtn" aria-label="Close menu">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
         </div>
 
         <div class="sidebar-tabs">
@@ -47,10 +44,6 @@
           </div>
           <div class="settings-stack">
             <label class="settings-card">
-              <span>Library folder name</span>
-              <input id="libraryFolderInput" type="text" maxlength="80" placeholder="Earlighter Library" />
-            </label>
-            <label class="settings-card">
               <span>Transcription quality</span>
               <select id="transcriptionModeSelect">
                 <option value="tiny">Low quality but fast</option>
@@ -62,7 +55,7 @@
               <span>Remember speed per audiobook</span>
               <input id="rememberSpeedCheckbox" type="checkbox" checked />
             </label>
-            <button class="settings-save" id="saveSettingsBtn" type="button">Save settings</button>
+            <button class="settings-action" id="changeLibraryFolderBtn" type="button">Change library folder</button>
           </div>
         </div>
       </aside>
@@ -97,14 +90,21 @@
               </div>
               <input type="range" min="0" max="1000" value="0" id="progressRange" class="progress-range" />
               <div class="transport-row">
-                <button class="transport-button" data-skip="-30" aria-label="Back 30 seconds">↺30</button>
-                <button class="transport-button" data-skip="-10" aria-label="Back 10 seconds">↺10</button>
+                <button class="transport-button" data-skip="-30" aria-label="Back 30 seconds"><span class="transport-symbol">⏪</span><span class="transport-label">30</span></button>
+                <button class="transport-button" data-skip="-10" aria-label="Back 10 seconds"><span class="transport-symbol">⏪</span><span class="transport-label">10</span></button>
                 <button class="transport-button play-button" id="playPauseBtn" aria-label="Play">
                   <svg class="play-icon" id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l10 6-10 6z" /></svg>
                   <svg class="pause-icon hidden" id="pauseIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h3v12H8zm5 0h3v12h-3z" /></svg>
                 </button>
-                <button class="transport-button" data-skip="10" aria-label="Forward 10 seconds">↻10</button>
-                <button class="transport-button" data-skip="30" aria-label="Forward 30 seconds">↻30</button>
+                <button class="transport-button" data-skip="10" aria-label="Forward 10 seconds"><span class="transport-symbol">⏩</span><span class="transport-label">10</span></button>
+                <button class="transport-button" data-skip="30" aria-label="Forward 30 seconds"><span class="transport-symbol">⏩</span><span class="transport-label">30</span></button>
+              </div>
+              <div class="clip-row">
+                <button class="clip-button" data-clip="10" aria-label="Save last 10 seconds">🖫 10s</button>
+                <button class="clip-button" data-clip="30" aria-label="Save last 30 seconds">🖫 30s</button>
+                <button class="clip-button" data-clip="60" aria-label="Save last 1 minute">🖫 1m</button>
+                <button class="clip-button" data-clip="180" aria-label="Save last 3 minutes">🖫 3m</button>
+                <button class="clip-button" data-clip="300" aria-label="Save last 5 minutes">🖫 5m</button>
               </div>
             </div>
           </div>
@@ -122,19 +122,22 @@
               </div>
               <input type="range" min="0" max="1000" value="0" id="notesProgressRange" class="progress-range compact-range" />
               <div class="transport-row compact-controls">
-                <button class="transport-button compact" data-skip="-30" aria-label="Back 30 seconds">↺30</button>
-                <button class="transport-button compact" data-skip="-10" aria-label="Back 10 seconds">↺10</button>
+                <button class="transport-button compact" data-skip="-30" aria-label="Back 30 seconds"><span class="transport-symbol">⏪</span><span class="transport-label">30</span></button>
+                <button class="transport-button compact" data-skip="-10" aria-label="Back 10 seconds"><span class="transport-symbol">⏪</span><span class="transport-label">10</span></button>
                 <button class="transport-button play-button compact" id="notesPlayPauseBtn" aria-label="Play or pause">
                   <svg class="play-icon" id="notesPlayIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l10 6-10 6z" /></svg>
                   <svg class="pause-icon hidden" id="notesPauseIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h3v12H8zm5 0h3v12h-3z" /></svg>
                 </button>
-                <button class="transport-button compact" data-skip="10" aria-label="Forward 10 seconds">↻10</button>
-                <button class="transport-button compact" data-skip="30" aria-label="Forward 30 seconds">↻30</button>
+                <button class="transport-button compact" data-skip="10" aria-label="Forward 10 seconds"><span class="transport-symbol">⏩</span><span class="transport-label">10</span></button>
+                <button class="transport-button compact" data-skip="30" aria-label="Forward 30 seconds"><span class="transport-symbol">⏩</span><span class="transport-label">30</span></button>
               </div>
-            </div>
-
-            <div class="notes-toolbar-inline">
-              <button class="subtle-action" id="addNoteLineBtn" type="button">New line</button>
+              <div class="clip-row compact-clip-row">
+                <button class="clip-button compact" data-clip="10" aria-label="Save last 10 seconds">🖫 10s</button>
+                <button class="clip-button compact" data-clip="30" aria-label="Save last 30 seconds">🖫 30s</button>
+                <button class="clip-button compact" data-clip="60" aria-label="Save last 1 minute">🖫 1m</button>
+                <button class="clip-button compact" data-clip="180" aria-label="Save last 3 minutes">🖫 3m</button>
+                <button class="clip-button compact" data-clip="300" aria-label="Save last 5 minutes">🖫 5m</button>
+              </div>
             </div>
 
             <div class="notes-document" id="notesDocument"></div>
@@ -155,15 +158,12 @@
     </div>
 
     <dialog class="sheet-dialog" id="speedDialog">
-      <form method="dialog" class="sheet-card">
-        <div class="sheet-head">
-          <div>
-            <div class="sheet-title">Playback speed</div>
-            <div class="sheet-subtitle" id="speedReadout">1.00×</div>
+      <form method="dialog" class="sheet-card speed-card">
+        <div class="sheet-head centered-sheet-head">
+          <div class="speed-heading-wrap">
+            <div class="sheet-title centered-title">Playback Speed</div>
+            <div class="sheet-subtitle centered-subtitle" id="speedReadout">1.00×</div>
           </div>
-          <button class="icon-button" value="cancel" aria-label="Close speed control">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
         </div>
         <div class="speed-sheet-body">
           <div class="speed-scale">
@@ -177,17 +177,21 @@
 
     <dialog class="sheet-dialog" id="librarySetupDialog">
       <form method="dialog" class="sheet-card onboarding-card" id="librarySetupForm">
-        <div class="sheet-head setup-head">
+        <div class="sheet-head setup-head no-space-between">
           <div>
-            <div class="sheet-title">Create your library folder</div>
-            <div class="sheet-subtitle">Set this once before importing audiobooks.</div>
+            <div class="sheet-title" id="libraryDialogTitle">Create your library folder</div>
+            <div class="sheet-subtitle" id="libraryDialogSubtitle">Set this once before importing audiobooks.</div>
           </div>
         </div>
         <label class="settings-card onboarding-input">
           <span>Folder name</span>
           <input id="librarySetupInput" type="text" maxlength="80" placeholder="Earlighter Library" required />
         </label>
-        <button class="settings-save" id="completeSetupBtn" type="submit">Create folder</button>
+        <div class="dialog-warning" id="libraryDialogWarning"></div>
+        <div class="dialog-actions">
+          <button class="settings-action secondary-action" id="cancelLibraryDialogBtn" type="button">Cancel</button>
+          <button class="settings-action" id="completeSetupBtn" type="submit">OK</button>
+        </div>
       </form>
     </dialog>
 

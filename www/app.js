@@ -1,9 +1,10 @@
-const STORAGE_KEY = 'earlighter-state-v2';
+const STORAGE_KEY = 'earlighter-state-v3';
 const DB_NAME = 'earlighter-db';
 const DB_VERSION = 1;
 const STORE_BLOBS = 'book-blobs';
 const SAVE_THROTTLE_MS = 1200;
 const MAX_INDENT = 8;
+const INDENT_STEP_PX = 24;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -12,16 +13,14 @@ const el = {
   sidebar: $('#sidebar'),
   sidebarBackdrop: $('#sidebarBackdrop'),
   openSidebarBtn: $('#openSidebarBtn'),
-  closeSidebarBtn: $('#closeSidebarBtn'),
   sidebarTabs: [...document.querySelectorAll('.sidebar-tab')],
   libraryPanel: $('#libraryPanel'),
   settingsPanel: $('#settingsPanel'),
   libraryGrid: $('#libraryGrid'),
   libraryFolderLabel: $('#libraryFolderLabel'),
-  libraryFolderInput: $('#libraryFolderInput'),
+  changeLibraryFolderBtn: $('#changeLibraryFolderBtn'),
   transcriptionModeSelect: $('#transcriptionModeSelect'),
   rememberSpeedCheckbox: $('#rememberSpeedCheckbox'),
-  saveSettingsBtn: $('#saveSettingsBtn'),
 
   playerView: $('#playerView'),
   notesView: $('#notesView'),
@@ -52,11 +51,16 @@ const el = {
   speedReadout: $('#speedReadout'),
 
   notesDocument: $('#notesDocument'),
-  addNoteLineBtn: $('#addNoteLineBtn'),
+  clipButtons: [...document.querySelectorAll('[data-clip]')],
 
   librarySetupDialog: $('#librarySetupDialog'),
   librarySetupForm: $('#librarySetupForm'),
   librarySetupInput: $('#librarySetupInput'),
+  libraryDialogTitle: $('#libraryDialogTitle'),
+  libraryDialogSubtitle: $('#libraryDialogSubtitle'),
+  libraryDialogWarning: $('#libraryDialogWarning'),
+  cancelLibraryDialogBtn: $('#cancelLibraryDialogBtn'),
+  completeSetupBtn: $('#completeSetupBtn'),
 
   toastRegion: $('#toastRegion'),
   fallbackFileInput: $('#fallbackFileInput')
@@ -71,6 +75,11 @@ let currentBookUrl = null;
 let saveTimer = null;
 let draggedLineId = null;
 let pendingFocusLineId = null;
+let pendingFocusCaret = null;
+let libraryDialogMode = 'setup';
+let swipeStartX = null;
+let swipeStartY = null;
+let dragPreview = { targetId: null, indent: 0 };
 
 const appState = loadState();
 
@@ -120,7 +129,8 @@ function migrateBook(book) {
     ...book,
     notesDoc: Array.isArray(book.notesDoc) ? book.notesDoc : flattenOutline(book.outline || []),
     speed: Number.isFinite(book.speed) ? book.speed : 1,
-    coverLabel: book.coverLabel || initials(book.title || 'Earlighter')
+    coverLabel: book.coverLabel || initials(book.title || 'Earlighter'),
+    clips: Array.isArray(book.clips) ? book.clips : []
   };
   if (!migrated.notesDoc.length) migrated.notesDoc = [createNoteLine('')];
   delete migrated.outline;
@@ -305,7 +315,8 @@ async function importBook() {
       lastPositionMs: 0,
       speed: 1,
       coverLabel: initials(title),
-      notesDoc: [createNoteLine('')]
+      notesDoc: [createNoteLine('')],
+      clips: []
     };
 
     await putBookBlob(id, picked.blob);
@@ -389,7 +400,6 @@ function updateBookUI() {
   el.coverArt.textContent = book?.coverLabel || 'EA';
   el.coverHint.textContent = book ? 'Tap cover to import another MP3' : 'Tap to import an MP3';
   el.libraryFolderLabel.textContent = appState.settings.libraryFolderName.trim() || 'No library folder set yet';
-  el.libraryFolderInput.value = appState.settings.libraryFolderName || '';
   el.transcriptionModeSelect.value = appState.settings.transcriptionMode;
   el.rememberSpeedCheckbox.checked = !!appState.settings.rememberSpeedPerBook;
   const speed = book?.speed || 1;
@@ -399,17 +409,21 @@ function updateBookUI() {
 
 function renderLibrary() {
   const books = [...appState.books].sort((a, b) => (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0));
-  if (!books.length) {
-    el.libraryGrid.innerHTML = `<div class="library-empty">Import an MP3 by tapping the cover on the player screen.</div>`;
-    return;
-  }
+  const cards = [
+    `<button class="library-import-card" type="button" data-import-card="1">
+      <div class="library-cover">＋</div>
+      <div class="library-title">Import MP3</div>
+    </button>`
+  ];
 
-  el.libraryGrid.innerHTML = books.map((book) => `
+  cards.push(...books.map((book) => `
     <button class="library-card ${book.id === appState.lastBookId ? 'active' : ''}" type="button" data-book-id="${book.id}">
       <div class="library-cover">${escapeHtml(book.coverLabel || initials(book.title))}</div>
       <div class="library-title">${escapeHtml(book.title)}</div>
     </button>
-  `).join('');
+  `));
+
+  el.libraryGrid.innerHTML = cards.join('');
 }
 
 function renderNotesDocument() {
@@ -422,16 +436,17 @@ function renderNotesDocument() {
   const lines = getNotesDoc(book);
   el.notesDocument.innerHTML = '';
 
-  lines.forEach((line) => {
+  lines.forEach((line, index) => {
     const row = document.createElement('div');
     row.className = 'note-line';
     row.dataset.lineId = line.id;
     row.dataset.indent = String(line.indent || 0);
-    row.draggable = true;
+    row.style.setProperty('--indent', String(line.indent || 0));
 
     const handle = document.createElement('button');
     handle.className = 'drag-handle';
     handle.type = 'button';
+    handle.draggable = true;
     handle.setAttribute('aria-label', 'Drag line');
     handle.textContent = '⋮⋮';
 
@@ -442,8 +457,14 @@ function renderNotesDocument() {
     editor.className = 'note-editor';
     editor.dataset.lineId = line.id;
     editor.rows = 1;
-    editor.placeholder = lines.length === 1 ? 'Start writing…' : '';
+    editor.placeholder = index === 0 && !line.text ? 'Start writing…' : '';
     editor.value = line.text || '';
+    editor.inputMode = 'text';
+    editor.enterKeyHint = 'enter';
+    editor.autocorrect = 'on';
+    editor.autocapitalize = 'sentences';
+    editor.spellcheck = true;
+    editor.autocomplete = 'off';
 
     row.append(handle, bullet, editor);
     el.notesDocument.appendChild(row);
@@ -451,8 +472,9 @@ function renderNotesDocument() {
   });
 
   if (pendingFocusLineId) {
-    focusLine(pendingFocusLineId);
+    focusLine(pendingFocusLineId, pendingFocusCaret);
     pendingFocusLineId = null;
+    pendingFocusCaret = null;
   }
 }
 
@@ -461,14 +483,13 @@ function autoSizeTextarea(textarea) {
   textarea.style.height = `${Math.max(28, textarea.scrollHeight)}px`;
 }
 
-function focusLine(lineId, toEnd = true) {
+function focusLine(lineId, caret = null) {
   const textarea = el.notesDocument.querySelector(`textarea[data-line-id="${lineId}"]`);
   if (!textarea) return;
   textarea.focus();
-  if (toEnd) {
-    const length = textarea.value.length;
-    textarea.setSelectionRange(length, length);
-  }
+  const length = textarea.value.length;
+  const position = caret == null ? length : Math.max(0, Math.min(length, caret));
+  textarea.setSelectionRange(position, position);
 }
 
 function updateProgressUI() {
@@ -519,30 +540,16 @@ function setPlaybackSpeed(speed) {
   }
 }
 
-function insertNoteAfter(lineId) {
+function insertNoteAfter(lineId, text = '', caret = null) {
   const lines = getNotesDoc();
   const index = lines.findIndex((line) => line.id === lineId);
   if (index < 0) return;
   const indent = lines[index].indent || 0;
-  const newLine = createNoteLine('', indent);
+  const newLine = createNoteLine(text, indent);
   lines.splice(index + 1, 0, newLine);
   persistState();
   pendingFocusLineId = newLine.id;
-  renderNotesDocument();
-}
-
-function addNoteLine() {
-  const book = currentBook();
-  if (!book) {
-    showToast('Import an audiobook first.');
-    return;
-  }
-  const lines = getNotesDoc(book);
-  const last = lines[lines.length - 1];
-  const newLine = createNoteLine('', last?.indent || 0);
-  lines.push(newLine);
-  persistState();
-  pendingFocusLineId = newLine.id;
+  pendingFocusCaret = caret;
   renderNotesDocument();
 }
 
@@ -579,6 +586,7 @@ function updateNoteLine(lineId, rawValue) {
 
   if (indentChanged) {
     pendingFocusLineId = lineId;
+    pendingFocusCaret = trimmedText.length;
     renderNotesDocument();
   }
 }
@@ -592,17 +600,47 @@ function changeLineIndent(lineId, delta) {
   renderNotesDocument();
 }
 
-function moveLine(dragId, targetId) {
+function moveLine(dragId, targetId, nextIndent = null) {
   const lines = getNotesDoc();
   const dragIndex = lines.findIndex((line) => line.id === dragId);
   const targetIndex = lines.findIndex((line) => line.id === targetId);
-  if (dragIndex < 0 || targetIndex < 0 || dragIndex === targetIndex) return;
+  if (dragIndex < 0 || targetIndex < 0) return;
   const [moved] = lines.splice(dragIndex, 1);
-  const insertIndex = dragIndex < targetIndex ? targetIndex - 1 : targetIndex;
-  lines.splice(Math.max(0, insertIndex), 0, moved);
+  const adjustedTargetIndex = dragIndex < targetIndex ? targetIndex - 1 : targetIndex;
+  lines.splice(Math.max(0, adjustedTargetIndex), 0, moved);
+  if (nextIndent != null) moved.indent = Math.max(0, Math.min(MAX_INDENT, nextIndent));
   persistState();
   pendingFocusLineId = dragId;
   renderNotesDocument();
+}
+
+function clipLabel(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
+}
+
+function saveClip(seconds) {
+  const book = currentBook();
+  if (!book) {
+    showToast('Import an audiobook first.');
+    return;
+  }
+  const endMs = Math.round((el.player.currentTime || 0) * 1000);
+  const durationMs = seconds * 1000;
+  const startMs = Math.max(0, endMs - durationMs);
+  if (!Array.isArray(book.clips)) book.clips = [];
+  book.clips.unshift({
+    id: uid('clip'),
+    createdAt: Date.now(),
+    startMs,
+    endMs,
+    durationMs,
+    sourcePlaybackSpeedAtCapture: book.speed || 1
+  });
+  persistState();
+  haptic('impactLight');
+  showToast(`Saved ${clipLabel(seconds)} clip at ${formatTime(endMs / 1000)}.`);
 }
 
 function renderApp() {
@@ -635,17 +673,60 @@ async function haptic(type) {
   }
 }
 
-function openLibrarySetup(force = false) {
+function openLibrarySetup(force = false, mode = 'setup') {
+  libraryDialogMode = mode;
   el.librarySetupInput.value = appState.settings.libraryFolderName || 'Earlighter Library';
+  if (mode === 'rename') {
+    el.libraryDialogTitle.textContent = 'Change library folder';
+    el.libraryDialogSubtitle.textContent = 'Choose a new library folder name.';
+    el.libraryDialogWarning.textContent = 'Are you sure? This updates the library folder name used by Earlighter for future organization. Existing imported books already stored inside the app stay available.';
+    el.cancelLibraryDialogBtn.hidden = false;
+  } else {
+    el.libraryDialogTitle.textContent = 'Create your library folder';
+    el.libraryDialogSubtitle.textContent = 'Set this once before importing audiobooks.';
+    el.libraryDialogWarning.textContent = '';
+    el.cancelLibraryDialogBtn.hidden = true;
+  }
   if (!el.librarySetupDialog.open || force) {
     el.librarySetupDialog.showModal();
   }
 }
 
+function closeLibrarySetup() {
+  if (libraryDialogMode === 'setup' && !appState.settings.libraryFolderName.trim()) return;
+  el.librarySetupDialog.close();
+}
+
+function clearDragPreview() {
+  dragPreview = { targetId: null, indent: 0 };
+  [...el.notesDocument.querySelectorAll('.note-line')].forEach((row) => {
+    row.classList.remove('drag-preview');
+    row.style.removeProperty('--preview-indent');
+  });
+}
+
 function bindEvents() {
   el.openSidebarBtn.addEventListener('click', openSidebar);
-  el.closeSidebarBtn.addEventListener('click', closeSidebar);
   el.sidebarBackdrop.addEventListener('click', closeSidebar);
+
+  el.sidebar.addEventListener('touchstart', (event) => {
+    const touch = event.touches[0];
+    swipeStartX = touch.clientX;
+    swipeStartY = touch.clientY;
+  }, { passive: true });
+
+  el.sidebar.addEventListener('touchmove', (event) => {
+    if (swipeStartX == null || swipeStartY == null) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - swipeStartX;
+    const dy = Math.abs(touch.clientY - swipeStartY);
+    if (dx < -50 && dy < 32) closeSidebar();
+  }, { passive: true });
+
+  el.sidebar.addEventListener('touchend', () => {
+    swipeStartX = null;
+    swipeStartY = null;
+  }, { passive: true });
 
   el.sidebarTabs.forEach((button) => {
     button.addEventListener('click', () => setSidebarTab(button.dataset.sidebarTab));
@@ -657,23 +738,26 @@ function bindEvents() {
 
   el.coverButton.addEventListener('click', importBook);
   el.openSpeedBtn.addEventListener('click', () => el.speedDialog.showModal());
-
   el.speedSlider.addEventListener('input', () => setPlaybackSpeed(el.speedSlider.value));
 
-  el.saveSettingsBtn.addEventListener('click', () => {
-    const folderName = el.libraryFolderInput.value.trim();
-    if (!folderName) {
-      showToast('Enter a library folder name.');
-      return;
-    }
-    appState.settings.libraryFolderName = folderName;
-    appState.settings.transcriptionMode = el.transcriptionModeSelect.value;
-    appState.settings.rememberSpeedPerBook = el.rememberSpeedCheckbox.checked;
-    persistState();
-    updateBookUI();
-    showToast('Settings saved.');
+  el.speedDialog.addEventListener('click', (event) => {
+    const rect = el.speedDialog.querySelector('.sheet-card').getBoundingClientRect();
+    const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    if (!inside) el.speedDialog.close();
   });
 
+  el.changeLibraryFolderBtn.addEventListener('click', () => openLibrarySetup(true, 'rename'));
+  el.transcriptionModeSelect.addEventListener('change', () => {
+    appState.settings.transcriptionMode = el.transcriptionModeSelect.value;
+    persistState();
+    showToast('Transcription quality updated.');
+  });
+  el.rememberSpeedCheckbox.addEventListener('change', () => {
+    appState.settings.rememberSpeedPerBook = el.rememberSpeedCheckbox.checked;
+    persistState();
+  });
+
+  el.cancelLibraryDialogBtn.addEventListener('click', closeLibrarySetup);
   el.librarySetupForm.addEventListener('submit', (event) => {
     event.preventDefault();
     const folderName = el.librarySetupInput.value.trim();
@@ -682,11 +766,10 @@ function bindEvents() {
       return;
     }
     appState.settings.libraryFolderName = folderName;
-    el.libraryFolderInput.value = folderName;
     persistState();
     el.librarySetupDialog.close();
     updateBookUI();
-    showToast('Library folder created.');
+    showToast(libraryDialogMode === 'rename' ? 'Library folder updated.' : 'Library folder created.');
   });
 
   async function togglePlayback() {
@@ -716,6 +799,10 @@ function bindEvents() {
     });
   });
 
+  el.clipButtons.forEach((button) => {
+    button.addEventListener('click', () => saveClip(Number(button.dataset.clip || 0)));
+  });
+
   const syncRangeChange = (range) => {
     range.addEventListener('input', () => {
       if (!currentBook()) return;
@@ -743,13 +830,17 @@ function bindEvents() {
   });
 
   el.libraryGrid.addEventListener('click', async (event) => {
+    const importCard = event.target.closest('[data-import-card]');
+    if (importCard) {
+      closeSidebar();
+      await importBook();
+      return;
+    }
     const card = event.target.closest('[data-book-id]');
     if (!card) return;
     await loadBook(card.dataset.bookId);
     closeSidebar();
   });
-
-  el.addNoteLineBtn.addEventListener('click', addNoteLine);
 
   el.notesDocument.addEventListener('input', (event) => {
     const textarea = event.target.closest('textarea[data-line-id]');
@@ -762,10 +853,19 @@ function bindEvents() {
     const textarea = event.target.closest('textarea[data-line-id]');
     if (!textarea) return;
     const lineId = textarea.dataset.lineId;
+    const lines = getNotesDoc();
+    const line = lines.find((item) => item.id === lineId);
+    if (!line) return;
 
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      insertNoteAfter(lineId);
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? start;
+      const before = textarea.value.slice(0, start);
+      const after = textarea.value.slice(end);
+      line.text = before;
+      persistState();
+      insertNoteAfter(lineId, after, 0);
       return;
     }
 
@@ -775,37 +875,49 @@ function bindEvents() {
       return;
     }
 
-    if (event.key === 'Backspace' && textarea.value === '') {
+    if (event.key === 'Backspace' && textarea.selectionStart === textarea.selectionEnd && textarea.value === '') {
       event.preventDefault();
-      removeNoteLine(lineId);
+      if ((line.indent || 0) > 0) {
+        changeLineIndent(lineId, -1);
+      } else {
+        removeNoteLine(lineId);
+      }
     }
   });
 
   el.notesDocument.addEventListener('dragstart', (event) => {
-    const row = event.target.closest('.note-line');
+    const handle = event.target.closest('.drag-handle');
+    if (!handle) return;
+    const row = handle.closest('.note-line');
     if (!row) return;
     draggedLineId = row.dataset.lineId;
     event.dataTransfer.effectAllowed = 'move';
-    row.classList.add('drag-target');
   });
 
   el.notesDocument.addEventListener('dragend', () => {
     draggedLineId = null;
-    [...el.notesDocument.querySelectorAll('.note-line')].forEach((row) => row.classList.remove('drag-target'));
+    clearDragPreview();
   });
 
   el.notesDocument.addEventListener('dragover', (event) => {
     event.preventDefault();
     const row = event.target.closest('.note-line');
-    [...el.notesDocument.querySelectorAll('.note-line')].forEach((item) => item.classList.toggle('drag-target', item === row));
+    if (!row) return;
+    const docRect = el.notesDocument.getBoundingClientRect();
+    const relativeX = Math.max(0, event.clientX - docRect.left - 24);
+    const indent = Math.max(0, Math.min(MAX_INDENT, Math.round(relativeX / INDENT_STEP_PX)));
+    clearDragPreview();
+    row.classList.add('drag-preview');
+    row.style.setProperty('--preview-indent', String(indent));
+    dragPreview = { targetId: row.dataset.lineId, indent };
   });
 
   el.notesDocument.addEventListener('drop', (event) => {
     event.preventDefault();
-    const row = event.target.closest('.note-line');
-    [...el.notesDocument.querySelectorAll('.note-line')].forEach((item) => item.classList.remove('drag-target'));
-    if (!draggedLineId || !row) return;
-    moveLine(draggedLineId, row.dataset.lineId);
+    if (!draggedLineId || !dragPreview.targetId) return;
+    moveLine(draggedLineId, dragPreview.targetId, dragPreview.indent);
+    draggedLineId = null;
+    clearDragPreview();
   });
 
   document.addEventListener('visibilitychange', () => {
