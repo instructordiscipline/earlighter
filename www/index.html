@@ -8,168 +8,186 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="topbar glass">
-        <div class="brand-wrap">
-          <div class="brand-mark">E</div>
-          <div>
-            <div class="eyebrow">Offline audiobook intelligence</div>
-            <h1>Earlighter</h1>
-          </div>
-        </div>
-        <div class="topbar-actions">
-          <button class="ghost-button" id="openSettingsBtn">Settings</button>
-          <button class="primary-button" id="importBookBtn">Import MP3</button>
-        </div>
-      </header>
-
-      <main class="main-grid">
-        <section class="hero-card glass">
-          <div class="book-art" id="bookArt">EA</div>
-          <div class="hero-meta">
-            <div class="eyebrow">Now open</div>
-            <h2 id="bookTitle">No audiobook imported</h2>
-            <p class="subtle" id="bookAuthor">Import an MP3 to start listening offline.</p>
-            <div class="hero-stats">
-              <div>
-                <span class="stat-label">Status</span>
-                <strong id="transcriptStatus">Transcript runtime not bundled</strong>
-              </div>
-              <div>
-                <span class="stat-label">Saved position</span>
-                <strong id="savedPosition">00:00</strong>
-              </div>
-              <div>
-                <span class="stat-label">Speed</span>
-                <strong id="speedReadout">1.0×</strong>
-              </div>
+    <div class="app" id="appRoot">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-brand">
+            <div class="brand-mark">E</div>
+            <div>
+              <div class="sidebar-title">Earlighter</div>
+              <div class="sidebar-subtitle">Offline library</div>
             </div>
           </div>
-        </section>
+          <button class="icon-button sidebar-close" id="closeSidebarBtn" aria-label="Close menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
 
-        <section class="player-card glass">
-          <div class="progress-head">
-            <span id="currentTime">00:00</span>
-            <span id="remainingTime">00:00</span>
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" data-sidebar-tab="library">Library</button>
+          <button class="sidebar-tab" data-sidebar-tab="settings">Settings</button>
+        </div>
+
+        <div class="sidebar-panel active" id="libraryPanel">
+          <div class="sidebar-panel-head">
+            <div>
+              <h2>Your library</h2>
+              <p id="libraryFolderLabel">No library folder set yet</p>
+            </div>
           </div>
-          <input type="range" min="0" max="1000" value="0" id="progressRange" class="progress-range" />
-          <div class="transport-row">
-            <button class="transport-button secondary" data-skip="-30">-30</button>
-            <button class="transport-button secondary" data-skip="-10">-10</button>
-            <button class="transport-button primary large" id="playPauseBtn">Play</button>
-            <button class="transport-button secondary" data-skip="10">+10</button>
-            <button class="transport-button secondary" data-skip="30">+30</button>
+          <div class="library-grid" id="libraryGrid"></div>
+        </div>
+
+        <div class="sidebar-panel" id="settingsPanel">
+          <div class="sidebar-panel-head">
+            <div>
+              <h2>Settings</h2>
+              <p>Simple, offline-first controls.</p>
+            </div>
           </div>
-          <div class="player-utility-row">
-            <label class="speed-control">
-              <span>Speed</span>
-              <select id="speedSelect">
-                <option value="0.75">0.75×</option>
-                <option value="1">1.0×</option>
-                <option value="1.25">1.25×</option>
-                <option value="1.5">1.5×</option>
-                <option value="1.75">1.75×</option>
-                <option value="2">2.0×</option>
+          <div class="settings-stack">
+            <label class="settings-card">
+              <span>Library folder name</span>
+              <input id="libraryFolderInput" type="text" maxlength="80" placeholder="Earlighter Library" />
+            </label>
+            <label class="settings-card">
+              <span>Transcription quality</span>
+              <select id="transcriptionModeSelect">
+                <option value="tiny">Low quality but fast</option>
+                <option value="base">Balanced</option>
+                <option value="small">High quality but slow</option>
               </select>
             </label>
-            <div class="clip-actions">
-              <button class="ghost-button" data-capture="10">Save 10s</button>
-              <button class="ghost-button" data-capture="30">Save 30s</button>
-              <button class="ghost-button" data-capture="60">Save 60s</button>
+            <label class="settings-card checkbox-card">
+              <span>Remember speed per audiobook</span>
+              <input id="rememberSpeedCheckbox" type="checkbox" checked />
+            </label>
+            <button class="settings-save" id="saveSettingsBtn" type="button">Save settings</button>
+          </div>
+        </div>
+      </aside>
+
+      <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+      <main class="screen">
+        <header class="screen-topbar">
+          <button class="icon-button" id="openSidebarBtn" aria-label="Open menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
+          <button class="icon-button speed-button" id="openSpeedBtn" aria-label="Playback speed">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17l2.5-2.5 2 1L15 12l4 1M8.5 9.5A1.5 1.5 0 1 0 8.5 6.5A1.5 1.5 0 1 0 8.5 9.5ZM7 11l2.5 1 1.5 2.5M11 11l2 1" /></svg>
+          </button>
+        </header>
+
+        <section class="view active" id="playerView">
+          <div class="player-stage">
+            <button class="cover-button" id="coverButton" aria-label="Import or change audiobook">
+              <div class="cover-art" id="coverArt">EA</div>
+              <div class="cover-hint" id="coverHint">Tap to import an MP3</div>
+            </button>
+
+            <div class="player-meta">
+              <h1 id="bookTitle">No audiobook selected</h1>
+            </div>
+
+            <div class="player-card">
+              <div class="time-row">
+                <span id="currentTime">00:00</span>
+                <span id="remainingTime">-00:00</span>
+              </div>
+              <input type="range" min="0" max="1000" value="0" id="progressRange" class="progress-range" />
+              <div class="transport-row">
+                <button class="transport-button" data-skip="-30" aria-label="Back 30 seconds">↺30</button>
+                <button class="transport-button" data-skip="-10" aria-label="Back 10 seconds">↺10</button>
+                <button class="transport-button play-button" id="playPauseBtn" aria-label="Play">
+                  <svg class="play-icon" id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l10 6-10 6z" /></svg>
+                  <svg class="pause-icon hidden" id="pauseIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h3v12H8zm5 0h3v12h-3z" /></svg>
+                </button>
+                <button class="transport-button" data-skip="10" aria-label="Forward 10 seconds">↻10</button>
+                <button class="transport-button" data-skip="30" aria-label="Forward 30 seconds">↻30</button>
+              </div>
             </div>
           </div>
         </section>
 
-        <section class="panel glass panel-library">
-          <div class="panel-head">
-            <div>
-              <div class="eyebrow">Library</div>
-              <h3>Your audiobooks</h3>
+        <section class="view" id="notesView">
+          <div class="notes-screen">
+            <div class="notes-title-block">
+              <h1 id="notesBookTitle">No audiobook selected</h1>
             </div>
-            <span class="badge" id="libraryCount">0 books</span>
+            <div class="mini-player-card">
+              <div class="time-row compact">
+                <span id="notesCurrentTime">00:00</span>
+                <span id="notesRemainingTime">-00:00</span>
+              </div>
+              <input type="range" min="0" max="1000" value="0" id="notesProgressRange" class="progress-range compact-range" />
+              <div class="transport-row compact-controls">
+                <button class="transport-button compact" data-skip="-30" aria-label="Back 30 seconds">↺30</button>
+                <button class="transport-button compact" data-skip="-10" aria-label="Back 10 seconds">↺10</button>
+                <button class="transport-button play-button compact" id="notesPlayPauseBtn" aria-label="Play or pause">
+                  <svg class="play-icon" id="notesPlayIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l10 6-10 6z" /></svg>
+                  <svg class="pause-icon hidden" id="notesPauseIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h3v12H8zm5 0h3v12h-3z" /></svg>
+                </button>
+                <button class="transport-button compact" data-skip="10" aria-label="Forward 10 seconds">↻10</button>
+                <button class="transport-button compact" data-skip="30" aria-label="Forward 30 seconds">↻30</button>
+              </div>
+            </div>
+
+            <div class="notes-toolbar-inline">
+              <button class="subtle-action" id="addNoteLineBtn" type="button">New line</button>
+            </div>
+
+            <div class="notes-document" id="notesDocument"></div>
           </div>
-          <div class="book-list" id="bookList"></div>
         </section>
 
-        <section class="panel glass panel-notes">
-          <div class="panel-head">
-            <div>
-              <div class="eyebrow">Notes</div>
-              <h3>Dynalist-style document</h3>
-            </div>
-            <div class="stacked-actions">
-              <button class="ghost-button" id="addRootNoteBtn">Add root bullet</button>
-              <button class="ghost-button" id="organizeNotesBtn">Organize</button>
-            </div>
-          </div>
-          <div class="notes-help subtle">One note document lives under each audiobook. Captured clips create bullets automatically.</div>
-          <div class="outline-root" id="outlineRoot"></div>
-        </section>
-
-        <section class="panel glass panel-clips">
-          <div class="panel-head">
-            <div>
-              <div class="eyebrow">Captured moments</div>
-              <h3>Recent clips</h3>
-            </div>
-            <span class="badge" id="clipCount">0 clips</span>
-          </div>
-          <div class="clip-list" id="clipList"></div>
-        </section>
-
-        <section class="panel glass panel-runtime">
-          <div class="panel-head">
-            <div>
-              <div class="eyebrow">Transcription & AI</div>
-              <h3>Runtime status</h3>
-            </div>
-          </div>
-          <div class="runtime-card">
-            <div class="runtime-row">
-              <span>Transcription preset</span>
-              <strong id="transcriptionPresetLabel">Balanced</strong>
-            </div>
-            <div class="runtime-row">
-              <span>Notes engine</span>
-              <strong>Offline organizer fallback</strong>
-            </div>
-            <p class="subtle runtime-copy">
-              The full Whisper.cpp and TinyLlama runtime bridge is designed into the app model and settings, but this compile-ready repository ships the player, persistence, capture, and hierarchy workflow without bundling large native model binaries.
-            </p>
-          </div>
-        </section>
+        <nav class="bottom-nav">
+          <button class="bottom-tab active" data-tab="player">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l10 6-10 6z" /></svg>
+            <span>Player</span>
+          </button>
+          <button class="bottom-tab" data-tab="notes">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm3 4h6M10 12h6M10 15h4" /></svg>
+            <span>Notes</span>
+          </button>
+        </nav>
       </main>
     </div>
 
-    <dialog class="settings-dialog glass" id="settingsDialog">
-      <form method="dialog" class="settings-form">
-        <div class="panel-head dialog-head">
+    <dialog class="sheet-dialog" id="speedDialog">
+      <form method="dialog" class="sheet-card">
+        <div class="sheet-head">
           <div>
-            <div class="eyebrow">Settings</div>
-            <h3>App preferences</h3>
+            <div class="sheet-title">Playback speed</div>
+            <div class="sheet-subtitle" id="speedReadout">1.00×</div>
           </div>
-          <button class="ghost-button" value="cancel">Close</button>
+          <button class="icon-button" value="cancel" aria-label="Close speed control">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
         </div>
-        <label class="settings-row">
-          <span>Transcription quality</span>
-          <select id="transcriptionModeSelect">
-            <option value="tiny">Low quality but fast</option>
-            <option value="base">Balanced</option>
-            <option value="small">High quality but slow</option>
-          </select>
-        </label>
-        <label class="settings-row">
-          <span>Remember per-book speed</span>
-          <input type="checkbox" id="rememberSpeedCheckbox" checked />
-        </label>
-        <label class="settings-row">
-          <span>Auto-organize captured notes</span>
-          <input type="checkbox" id="autoOrganizeCheckbox" checked />
-        </label>
-        <div class="settings-row storage-row">
-          <span>Local storage estimate</span>
-          <strong id="storageEstimate">0 MB</strong>
+        <div class="speed-sheet-body">
+          <div class="speed-scale">
+            <span>0.5×</span>
+            <span>3.0×</span>
+          </div>
+          <input type="range" min="0.5" max="3" step="0.25" value="1" id="speedSlider" class="speed-slider" />
         </div>
+      </form>
+    </dialog>
+
+    <dialog class="sheet-dialog" id="librarySetupDialog">
+      <form method="dialog" class="sheet-card onboarding-card" id="librarySetupForm">
+        <div class="sheet-head setup-head">
+          <div>
+            <div class="sheet-title">Create your library folder</div>
+            <div class="sheet-subtitle">Set this once before importing audiobooks.</div>
+          </div>
+        </div>
+        <label class="settings-card onboarding-input">
+          <span>Folder name</span>
+          <input id="librarySetupInput" type="text" maxlength="80" placeholder="Earlighter Library" required />
+        </label>
+        <button class="settings-save" id="completeSetupBtn" type="submit">Create folder</button>
       </form>
     </dialog>
 
