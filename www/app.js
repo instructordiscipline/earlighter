@@ -6,6 +6,7 @@ const SAVE_THROTTLE_MS = 1200;
 const MAX_INDENT = 8;
 const SWIPE_THRESHOLD = 42;
 const INDENT_STEP_PX = 24;
+const HIGHLIGHT_MIN_WORDS = 4;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -22,6 +23,7 @@ const el = {
   changeLibraryFolderBtn: $('#changeLibraryFolderBtn'),
   transcriptionModeSelect: $('#transcriptionModeSelect'),
   rememberSpeedCheckbox: $('#rememberSpeedCheckbox'),
+  highlightModeSelect: $('#highlightModeSelect'),
 
   screen: $('.screen'),
   viewsViewport: $('#viewsViewport'),
@@ -87,6 +89,7 @@ let swipeStartX = null;
 let swipeStartY = null;
 let dragPreview = { targetId: null, indent: 0, placement: 'before' };
 let noteDragActive = false;
+let highlightProcessingActive = false;
 let swipeMode = null;
 let swipeSidebarCandidate = false;
 let pageSwipeOffset = 0;
@@ -100,7 +103,8 @@ function createDefaultState() {
     settings: {
       transcriptionMode: 'base',
       rememberSpeedPerBook: true,
-      libraryFolderName: ''
+      libraryFolderName: '',
+      highlightMode: 'verbatim'
     },
     ui: {
       activeTab: 'player',
@@ -138,7 +142,7 @@ function loadState() {
 function migrateBook(book) {
   const migrated = {
     ...book,
-    notesDoc: Array.isArray(book.notesDoc) ? book.notesDoc : flattenOutline(book.outline || []),
+    notesDoc: Array.isArray(book.notesDoc) ? book.notesDoc.map(normalizeNoteLine) : flattenOutline(book.outline || []).map(normalizeNoteLine),
     speed: Number.isFinite(book.speed) ? book.speed : 1,
     coverLabel: book.coverLabel || initials(book.title || 'Earlighter'),
     clips: Array.isArray(book.clips) ? book.clips : []
@@ -192,12 +196,49 @@ function currentBook() {
   return appState.books.find((book) => book.id === appState.lastBookId) || null;
 }
 
-function createNoteLine(text = '', indent = 0) {
-  return {
+function createNoteLine(text = '', indent = 0, extras = {}) {
+  return normalizeNoteLine({
     id: uid('line'),
     text,
-    indent: Math.max(0, Math.min(MAX_INDENT, indent))
+    indent: Math.max(0, Math.min(MAX_INDENT, indent)),
+    ...extras
+  });
+}
+
+function normalizeNoteLine(line = {}) {
+  return {
+    id: line.id || uid('line'),
+    text: line.text || '',
+    indent: Math.max(0, Math.min(MAX_INDENT, Number(line.indent) || 0)),
+    kind: line.kind || 'text',
+    jobStatus: line.jobStatus || null,
+    clipSeconds: Number(line.clipSeconds) || 0,
+    startMs: Number(line.startMs) || 0,
+    endMs: Number(line.endMs) || 0,
+    createdAt: Number(line.createdAt) || Date.now(),
+    modelMode: line.modelMode || null
   };
+}
+
+
+function isHighlightJobLine(line) {
+  return line?.kind === 'highlight-job';
+}
+
+function isPendingHighlightLine(line) {
+  return isHighlightJobLine(line) && (line.jobStatus === 'queued' || line.jobStatus === 'processing');
+}
+
+function resetStaleProcessingJobs() {
+  for (const book of appState.books) {
+    if (!Array.isArray(book.notesDoc)) continue;
+    for (const line of book.notesDoc) {
+      if (line?.kind === 'highlight-job' && line.jobStatus === 'processing') {
+        line.jobStatus = 'queued';
+        line.text = 'Waiting to Process…';
+      }
+    }
+  }
 }
 
 function getNotesDoc(book = currentBook()) {
@@ -446,6 +487,7 @@ function updateBookUI() {
   el.libraryFolderLabel.textContent = appState.settings.libraryFolderName.trim() || 'No library folder set yet';
   el.transcriptionModeSelect.value = appState.settings.transcriptionMode;
   el.rememberSpeedCheckbox.checked = !!appState.settings.rememberSpeedPerBook;
+  if (el.highlightModeSelect) el.highlightModeSelect.value = appState.settings.highlightMode || 'verbatim';
   const speed = book?.speed || 1;
   el.speedSlider.value = String(speed);
   updateSpeedReadout(speed);
@@ -483,6 +525,8 @@ function renderNotesDocument() {
   lines.forEach((line, index) => {
     const row = document.createElement('div');
     row.className = 'note-line';
+    if (line.jobStatus === 'processing') row.classList.add('processing-line');
+    if (line.jobStatus === 'queued') row.classList.add('queued-line');
     row.dataset.lineId = line.id;
     row.dataset.indent = String(line.indent || 0);
     row.style.setProperty('--indent', String(line.indent || 0));
@@ -498,10 +542,11 @@ function renderNotesDocument() {
     bullet.className = 'note-bullet';
     bullet.type = 'button';
     bullet.draggable = true;
-    bullet.setAttribute('aria-label', 'Drag line');
+    bullet.setAttribute('aria-label', line.jobStatus === 'processing' ? 'Processing highlight' : line.jobStatus === 'queued' ? 'Queued highlight' : 'Drag line');
 
     const editor = document.createElement('textarea');
     editor.className = 'note-editor';
+    if (isPendingHighlightLine(line)) editor.classList.add('note-editor-pending');
     editor.dataset.lineId = line.id;
     editor.rows = 1;
     editor.placeholder = index === 0 && !line.text ? 'Start writing…' : '';
@@ -510,8 +555,9 @@ function renderNotesDocument() {
     editor.enterKeyHint = 'enter';
     editor.autocorrect = 'on';
     editor.autocapitalize = 'sentences';
-    editor.spellcheck = true;
+    editor.spellcheck = !isPendingHighlightLine(line);
     editor.autocomplete = 'off';
+    editor.readOnly = isPendingHighlightLine(line);
 
     row.append(handle, bullet, editor);
     el.notesDocument.appendChild(row);
@@ -591,6 +637,153 @@ function setPlaybackSpeed(speed) {
   if (book && appState.settings.rememberSpeedPerBook) {
     book.speed = safeSpeed;
     persistState();
+  }
+}
+
+
+function addPendingHighlightLine(book, seconds, startMs, endMs) {
+  const lines = getNotesDoc(book);
+  const line = createNoteLine('Waiting to Process…', 0, {
+    kind: 'highlight-job',
+    jobStatus: 'queued',
+    clipSeconds: seconds,
+    startMs,
+    endMs,
+    createdAt: Date.now(),
+    modelMode: appState.settings.highlightMode || 'verbatim'
+  });
+  lines.unshift(line);
+  persistState();
+  renderNotesDocument();
+  return line;
+}
+
+function collectPendingHighlightJobs() {
+  const jobs = [];
+  for (const book of appState.books) {
+    const lines = getNotesDoc(book);
+    lines.forEach((line, index) => {
+      if (isPendingHighlightLine(line)) jobs.push({ book, lines, line, index });
+    });
+  }
+  return jobs.sort((a, b) => (a.line.createdAt || 0) - (b.line.createdAt || 0));
+}
+
+function findProcessingJob() {
+  for (const book of appState.books) {
+    const lines = getNotesDoc(book);
+    const index = lines.findIndex((line) => line?.jobStatus === 'processing');
+    if (index >= 0) return { book, lines, line: lines[index], index };
+  }
+  return null;
+}
+
+function extractLikelySentences(rawText) {
+  const normalized = String(rawText || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .trim();
+  if (!normalized) return [];
+  const parts = normalized.match(/[^.!?]+[.!?]?/g) || [normalized];
+  const cleaned = [];
+  for (let part of parts) {
+    let sentence = part.trim();
+    if (!sentence) continue;
+    const startsWell = /^["'([A-Z0-9]/.test(sentence);
+    const wordCount = sentence.split(/\s+/).filter(Boolean).length;
+    const endsWell = /[.!?]$/.test(sentence);
+    if (!startsWell) continue;
+    if (!endsWell) {
+      if (wordCount >= HIGHLIGHT_MIN_WORDS + 1) sentence += '.';
+      else continue;
+    }
+    if (wordCount < HIGHLIGHT_MIN_WORDS) continue;
+    cleaned.push(sentence);
+  }
+  return cleaned;
+}
+
+function summarizeSentences(sentences) {
+  if (!sentences.length) return '';
+  const merged = sentences.slice(0, 3).join(' ');
+  if (merged.length <= 220) return merged;
+  return `${merged.slice(0, 217).trimEnd()}…`;
+}
+
+function buildHighlightLinesFromText(rawText, mode = 'verbatim') {
+  const sentences = extractLikelySentences(rawText);
+  if (!sentences.length) return [];
+  if (mode === 'summary') return [summarizeSentences(sentences)];
+  return sentences;
+}
+
+async function runOfflineHighlightProcessor(job) {
+  const bridge = window.EarlighterOffline || Plugins.EarlighterOffline;
+  if (!bridge?.processHighlight) {
+    throw new Error('Offline highlight runtime is not installed in this build.');
+  }
+  return await bridge.processHighlight({
+    bookId: job.book.id,
+    sourceName: job.book.sourceName || job.book.title,
+    startMs: job.line.startMs,
+    endMs: job.line.endMs,
+    clipSeconds: job.line.clipSeconds,
+    transcriptionMode: appState.settings.transcriptionMode,
+    highlightMode: job.line.modelMode || appState.settings.highlightMode || 'verbatim'
+  });
+}
+
+function replacePendingLineWithNotes(job, noteTexts) {
+  const { lines, index, line } = job;
+  if (!noteTexts.length) {
+    lines.splice(index, 1);
+    persistState();
+    renderNotesDocument();
+    showToast('Nothing usable was found in that highlight.');
+    return;
+  }
+  const indent = line.indent || 0;
+  const newLines = noteTexts.map((text) => createNoteLine(text, indent));
+  lines.splice(index, 1, ...newLines);
+  persistState();
+  renderNotesDocument();
+}
+
+async function processHighlightQueue() {
+  if (highlightProcessingActive) return;
+  const existing = findProcessingJob();
+  if (existing) {
+    highlightProcessingActive = true;
+  }
+  const nextJob = existing || collectPendingHighlightJobs()[0];
+  if (!nextJob) {
+    highlightProcessingActive = false;
+    return;
+  }
+  const { line } = nextJob;
+  line.jobStatus = 'processing';
+  line.text = 'Processing Highlight…';
+  persistState();
+  renderNotesDocument();
+  highlightProcessingActive = true;
+
+  try {
+    const result = await runOfflineHighlightProcessor(nextJob);
+    const noteTexts = Array.isArray(result?.items) && result.items.length
+      ? result.items.map((item) => String(item || '').trim()).filter(Boolean)
+      : buildHighlightLinesFromText(result?.summary || result?.text || result?.transcript || '', nextJob.line.modelMode || appState.settings.highlightMode || 'verbatim');
+    replacePendingLineWithNotes(nextJob, noteTexts);
+  } catch (error) {
+    console.error(error);
+    line.jobStatus = null;
+    line.kind = 'text';
+    line.text = 'Highlight processing unavailable in this build.';
+    persistState();
+    renderNotesDocument();
+    showToast(error?.message || 'Highlight processing failed.');
+  } finally {
+    highlightProcessingActive = false;
+    window.setTimeout(() => processHighlightQueue(), 30);
   }
 }
 
@@ -734,9 +927,11 @@ function saveClip(seconds) {
     durationMs,
     sourcePlaybackSpeedAtCapture: book.speed || 1
   });
+  addPendingHighlightLine(book, seconds, startMs, endMs);
   persistState();
   haptic('impactLight');
-  showToast(`Saved ${clipLabel(seconds)} clip at ${formatTime(endMs / 1000)}.`);
+  showToast(`Queued ${clipLabel(seconds)} highlight.`);
+  processHighlightQueue();
 }
 
 function renderApp() {
@@ -957,6 +1152,11 @@ function bindEvents() {
     appState.settings.rememberSpeedPerBook = el.rememberSpeedCheckbox.checked;
     persistState();
   });
+  el.highlightModeSelect?.addEventListener('change', () => {
+    appState.settings.highlightMode = el.highlightModeSelect.value;
+    persistState();
+    showToast(el.highlightModeSelect.value === 'summary' ? 'Summary Mode enabled.' : 'Verbatim highlights enabled.');
+  });
 
   el.cancelLibraryDialogBtn.addEventListener('click', closeLibrarySetup);
   el.librarySetupForm.addEventListener('submit', (event) => {
@@ -1046,6 +1246,9 @@ function bindEvents() {
   el.notesDocument.addEventListener('input', (event) => {
     const textarea = event.target.closest('textarea[data-line-id]');
     if (!textarea) return;
+    const lines = getNotesDoc();
+    const current = lines.find((item) => item.id === textarea.dataset.lineId);
+    if (isPendingHighlightLine(current)) return;
     updateNoteLine(textarea.dataset.lineId, textarea.value);
     autoSizeTextarea(textarea);
   });
@@ -1056,7 +1259,7 @@ function bindEvents() {
     const lineId = textarea.dataset.lineId;
     const lines = getNotesDoc();
     const line = lines.find((item) => item.id === lineId);
-    if (!line) return;
+    if (!line || isPendingHighlightLine(line)) return;
 
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -1151,6 +1354,7 @@ function escapeHtml(value) {
 }
 
 async function init() {
+  resetStaleProcessingJobs();
   bindEvents();
   renderApp();
   if (!appState.settings.libraryFolderName.trim()) {
@@ -1160,6 +1364,7 @@ async function init() {
     await loadBook(appState.lastBookId);
   }
   renderApp();
+  processHighlightQueue();
 }
 
 init();

@@ -473,6 +473,11 @@ p {
   background: rgba(143, 166, 255, 0.08);
 }
 
+.processing-line,
+.queued-line {
+  opacity: 0.96;
+}
+
 .note-line.drag-preview::before {
   content: "";
   position: absolute;
@@ -548,6 +553,48 @@ p {
 
 .note-editor::placeholder {
   color: var(--soft);
+}
+
+
+.note-editor-pending {
+  color: var(--muted);
+  cursor: default;
+}
+
+.processing-line .note-bullet,
+.queued-line .note-bullet {
+  cursor: grab;
+}
+
+.processing-line .note-bullet::before,
+.queued-line .note-bullet::before {
+  width: 10px;
+  height: 10px;
+}
+
+.processing-line .note-bullet::after,
+.queued-line .note-bullet::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(155, 176, 255, 0.28);
+  border-top-color: rgba(220, 228, 255, 0.96);
+}
+
+.processing-line .note-bullet::after {
+  animation: spin-ring 0.85s linear infinite;
+}
+
+.queued-line .note-bullet::after {
+  border-top-color: rgba(155, 176, 255, 0.45);
+  opacity: 0.7;
+}
+
+@keyframes spin-ring {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .bottom-nav {
@@ -963,6 +1010,7 @@ p {
 }
 
 .note-bullet {
+  position: relative;
   width: 18px;
   height: 18px;
   margin-top: 7px;
