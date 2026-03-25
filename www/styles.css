@@ -493,14 +493,6 @@ p {
   cursor: grabbing;
 }
 
-.note-bullet {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--brand);
-  margin-top: 12px;
-  opacity: 0.96;
-}
 
 .note-editor {
   min-height: 28px;
@@ -878,4 +870,83 @@ p {
     right: 24px;
     max-width: 760px;
   }
+}
+
+
+#notesView.mini-collapsed .notes-title-block,
+#notesView.mini-collapsed .mini-player-card {
+  display: none;
+}
+
+#notesView.mini-collapsed .notes-sticky-shell {
+  min-height: 20px;
+  padding-top: 2px;
+  background: linear-gradient(180deg, rgba(7, 11, 22, 0.98) 0%, rgba(7, 11, 22, 0.72) 72%, rgba(7, 11, 22, 0) 100%);
+}
+
+#notesView.mini-collapsed .notes-document {
+  min-height: calc(100vh - 160px);
+  padding-top: 4px;
+}
+
+.mini-collapse-tab {
+  position: absolute;
+  top: 10px;
+  right: 4px;
+  width: 34px;
+  height: 34px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: rgba(18, 28, 49, 0.9);
+  border: 1px solid rgba(152, 176, 255, 0.12);
+  box-shadow: var(--shadow-md);
+  z-index: 12;
+}
+
+.mini-collapse-tab svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 180ms ease;
+}
+
+.mini-collapse-tab.collapsed svg {
+  transform: rotate(180deg);
+}
+
+.notes-sticky-shell {
+  position: sticky;
+}
+
+.notes-sticky-shell .mini-player-card {
+  margin-right: 46px;
+}
+
+.note-bullet {
+  width: 18px;
+  height: 18px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: grab;
+}
+
+.note-bullet::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  opacity: 0.96;
+}
+
+.note-bullet:active,
+.drag-handle:active {
+  cursor: grabbing;
 }

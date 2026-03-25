@@ -51,6 +51,8 @@ const el = {
   speedSlider: $('#speedSlider'),
   speedReadout: $('#speedReadout'),
 
+  notesStickyShell: $('#notesStickyShell'),
+  miniCollapseBtn: $('#miniCollapseBtn'),
   notesDocument: $('#notesDocument'),
   clipButtons: [...document.querySelectorAll('[data-clip]')],
 
@@ -96,7 +98,8 @@ function createDefaultState() {
     },
     ui: {
       activeTab: 'player',
-      sidebarTab: 'library'
+      sidebarTab: 'library',
+      notesMiniCollapsed: false
     }
   };
 }
@@ -400,6 +403,17 @@ function setActiveTab(tab, persist = true) {
   el.notesView.classList.toggle('active', tab === 'notes');
 }
 
+function applyNotesMiniState(persist = true) {
+  const collapsed = !!appState.ui.notesMiniCollapsed;
+  el.notesView.classList.toggle('mini-collapsed', collapsed);
+  if (el.miniCollapseBtn) {
+    el.miniCollapseBtn.setAttribute('aria-label', collapsed ? 'Expand mini player' : 'Collapse mini player');
+    el.miniCollapseBtn.setAttribute('aria-expanded', String(!collapsed));
+    el.miniCollapseBtn.classList.toggle('collapsed', collapsed);
+  }
+  if (persist) persistState();
+}
+
 function updateSpeedReadout(speed) {
   el.speedReadout.textContent = `${Number(speed).toFixed(2).replace(/\.00$/, '.0').replace(/(\.\d)0$/, '$1')}×`;
 }
@@ -461,8 +475,11 @@ function renderNotesDocument() {
     handle.setAttribute('aria-label', 'Drag line');
     handle.textContent = '⋮⋮';
 
-    const bullet = document.createElement('div');
+    const bullet = document.createElement('button');
     bullet.className = 'note-bullet';
+    bullet.type = 'button';
+    bullet.draggable = true;
+    bullet.setAttribute('aria-label', 'Drag line');
 
     const editor = document.createElement('textarea');
     editor.className = 'note-editor';
@@ -710,6 +727,7 @@ function renderApp() {
   updateProgressUI();
   setActiveTab(appState.ui.activeTab || 'player', false);
   setSidebarTab(appState.ui.sidebarTab || 'library', false);
+  applyNotesMiniState(false);
   syncPlayButtons(!el.player.paused);
 }
 
@@ -767,12 +785,16 @@ function clearDragPreview() {
 
 function bindEvents() {
   el.openSidebarBtn.addEventListener('click', openSidebar);
+  el.miniCollapseBtn?.addEventListener('click', () => {
+    appState.ui.notesMiniCollapsed = !appState.ui.notesMiniCollapsed;
+    applyNotesMiniState();
+  });
   el.sidebarBackdrop.addEventListener('click', closeSidebar);
 
   let gestureHandled = false;
 
   document.addEventListener('touchstart', (event) => {
-    if (event.target.closest('.drag-handle')) {
+    if (event.target.closest('.drag-handle, .note-bullet')) {
       noteDragActive = true;
       return;
     }
@@ -793,18 +815,22 @@ function bindEvents() {
     const startedOnLeftHalf = swipeStartX <= (window.innerWidth / 2);
     const onNotes = appState.ui.activeTab === 'notes';
 
-    if (dx > 0) {
-      if (startedOnLeftHalf) {
-        openSidebar();
-      } else if (!onNotes) {
-        setActiveTab('notes');
+    if (onNotes) {
+      if (dx > 0) {
+        setActiveTab('player');
+        gestureHandled = true;
       }
+      return;
+    }
+
+    if (dx < 0) {
+      setActiveTab('notes');
       gestureHandled = true;
       return;
     }
 
-    if (dx < 0 && onNotes) {
-      setActiveTab('player');
+    if (dx > 0 && startedOnLeftHalf) {
+      openSidebar();
       gestureHandled = true;
     }
   }, { passive: true });
@@ -993,9 +1019,9 @@ function bindEvents() {
   });
 
   el.notesDocument.addEventListener('dragstart', (event) => {
-    const handle = event.target.closest('.drag-handle');
-    if (!handle) return;
-    const row = handle.closest('.note-line');
+    const dragStartControl = event.target.closest('.drag-handle, .note-bullet');
+    if (!dragStartControl) return;
+    const row = dragStartControl.closest('.note-line');
     if (!row) return;
     draggedLineId = row.dataset.lineId;
     noteDragActive = true;
