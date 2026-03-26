@@ -17,6 +17,9 @@
     "@capacitor/haptics": "^8.0.0",
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/preferences": "^8.0.0",
-    "@capawesome/capacitor-file-picker": "^8.0.0"
+    "@capawesome/capacitor-file-picker": "^8.0.0",
+    "@capacitor/file-transfer": "^8.0.0",
+    "earlighter-whisper-runtime": "file:plugins/earlighter-whisper-runtime",
+    "earlighter-llama-runtime": "file:plugins/earlighter-llama-runtime"
   }
 }

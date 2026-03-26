@@ -1,0 +1,1 @@
+Put the full whisper.cpp source tree in this folder before wiring the native Android runtime.

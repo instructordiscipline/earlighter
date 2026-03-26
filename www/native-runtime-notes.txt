@@ -1,0 +1,1 @@
+Native runtime local plugins are now scaffolded in plugins/earlighter-whisper-runtime and plugins/earlighter-llama-runtime.

@@ -1,0 +1,19 @@
+{
+  "name": "earlighter-whisper-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Whisper runtime local Capacitor plugin for Earlighter.",
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "android/",
+    "dist/",
+    "README.md"
+  ],
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  }
+}

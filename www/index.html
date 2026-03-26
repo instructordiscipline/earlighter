@@ -22,6 +22,7 @@
 
         <div class="sidebar-tabs">
           <button class="sidebar-tab active" data-sidebar-tab="library">Library</button>
+          <button class="sidebar-tab" data-sidebar-tab="models">Models</button>
           <button class="sidebar-tab" data-sidebar-tab="settings">Settings</button>
         </div>
 
@@ -35,6 +36,37 @@
           <div class="library-grid" id="libraryGrid"></div>
         </div>
 
+        <div class="sidebar-panel" id="modelsPanel">
+          <div class="sidebar-panel-head">
+            <div>
+              <h2>Models</h2>
+              <p id="modelFolderLabel">Saved to models</p>
+            </div>
+          </div>
+          <div class="settings-stack model-sections">
+            <section class="model-section">
+              <div class="model-section-head">
+                <div>
+                  <div class="model-section-title">Whisper</div>
+                  <div class="model-section-subtitle">tiny.en, base.en, and small.en</div>
+                </div>
+              </div>
+              <div class="model-list" id="whisperModelsList"></div>
+              <button class="settings-action secondary-action" type="button" data-model-picker="whisper">Select a File</button>
+            </section>
+            <section class="model-section">
+              <div class="model-section-head">
+                <div>
+                  <div class="model-section-title">Notes AI</div>
+                  <div class="model-section-subtitle">GGUF models for offline cleanup and summary mode</div>
+                </div>
+              </div>
+              <div class="model-list" id="llmModelsList"></div>
+              <button class="settings-action secondary-action" type="button" data-model-picker="llm">Select a File</button>
+            </section>
+          </div>
+        </div>
+
         <div class="sidebar-panel" id="settingsPanel">
           <div class="sidebar-panel-head">
             <div>
@@ -43,14 +75,6 @@
             </div>
           </div>
           <div class="settings-stack">
-            <label class="settings-card">
-              <span>Transcription quality</span>
-              <select id="transcriptionModeSelect">
-                <option value="tiny">Low quality but fast</option>
-                <option value="base">Balanced</option>
-                <option value="small">High quality but slow</option>
-              </select>
-            </label>
             <label class="settings-card checkbox-card">
               <span>Remember speed per audiobook</span>
               <input id="rememberSpeedCheckbox" type="checkbox" checked />
@@ -217,6 +241,7 @@
     <div class="toast-region" id="toastRegion"></div>
     <audio id="player"></audio>
     <input type="file" id="fallbackFileInput" accept="audio/*,.mp3" hidden />
+    <input type="file" id="modelFileInput" accept=".bin,.en,.gguf,.ggml" hidden />
 
     <script type="module" src="./app.js"></script>
   </body>

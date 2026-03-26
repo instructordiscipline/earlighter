@@ -1,0 +1,42 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'com.earlighter.whisperruntime'
+    compileSdk rootProject.ext.compileSdkVersion ?: 35
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion ?: 26
+        targetSdkVersion rootProject.ext.targetSdkVersion ?: 35
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17 -fexceptions -frtti'
+                arguments '-DANDROID_STL=c++_shared'
+                abiFilters 'arm64-v8a'
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+    ndkVersion '27.0.12077973'
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+}

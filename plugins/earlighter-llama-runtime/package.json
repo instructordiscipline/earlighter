@@ -1,0 +1,19 @@
+{
+  "name": "earlighter-llama-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "llama.cpp runtime local Capacitor plugin for Earlighter.",
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "android/",
+    "dist/",
+    "README.md"
+  ],
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  }
+}

@@ -1,12 +1,26 @@
 const STORAGE_KEY = 'earlighter-state-v3';
 const DB_NAME = 'earlighter-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_BLOBS = 'book-blobs';
+const STORE_MODEL_FILES = 'model-files';
 const SAVE_THROTTLE_MS = 1200;
 const MAX_INDENT = 8;
 const SWIPE_THRESHOLD = 42;
 const INDENT_STEP_PX = 24;
 const HIGHLIGHT_MIN_WORDS = 4;
+
+const MODEL_CATALOG = {
+  whisper: [
+    { id: 'whisper-tiny-en', tier: 'Fastest', title: 'tiny.en', note: 'Fastest transcription', recommended: false, mode: 'tiny', sizeLabel: '~75 MB', filename: 'ggml-tiny.en.bin', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin' },
+    { id: 'whisper-base-en', tier: 'Balanced', title: 'base.en', note: 'Balanced transcription', recommended: true, mode: 'base', sizeLabel: '~142 MB', filename: 'ggml-base.en.bin', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin' },
+    { id: 'whisper-small-en', tier: 'Highest Quality', title: 'small.en', note: 'Highest quality of the three', recommended: false, mode: 'small', sizeLabel: '~466 MB', filename: 'ggml-small.en.bin', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin' }
+  ],
+  llm: [
+    { id: 'llm-tinyllama', tier: 'Fastest', title: 'TinyLlama 1.1B', note: 'Fastest notes cleanup', recommended: true, sizeLabel: '~669 MB', filename: 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf', url: 'https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf' },
+    { id: 'llm-qwen-0_5b', tier: 'Balanced', title: 'Qwen2.5 0.5B', note: 'Balanced notes cleanup', recommended: false, sizeLabel: '~491 MB', filename: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', url: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf' },
+    { id: 'llm-qwen-1_5b', tier: 'Highest Quality', title: 'Qwen2.5 1.5B', note: 'Highest quality of the three', recommended: false, sizeLabel: '~1.12 GB', filename: 'qwen2.5-1.5b-instruct-q4_k_m.gguf', url: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf' }
+  ]
+};
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -17,9 +31,13 @@ const el = {
   openSidebarBtn: $('#openSidebarBtn'),
   sidebarTabs: [...document.querySelectorAll('.sidebar-tab')],
   libraryPanel: $('#libraryPanel'),
+  modelsPanel: $('#modelsPanel'),
   settingsPanel: $('#settingsPanel'),
   libraryGrid: $('#libraryGrid'),
   libraryFolderLabel: $('#libraryFolderLabel'),
+  modelFolderLabel: $('#modelFolderLabel'),
+  whisperModelsList: $('#whisperModelsList'),
+  llmModelsList: $('#llmModelsList'),
   changeLibraryFolderBtn: $('#changeLibraryFolderBtn'),
   transcriptionModeSelect: $('#transcriptionModeSelect'),
   rememberSpeedCheckbox: $('#rememberSpeedCheckbox'),
@@ -71,7 +89,8 @@ const el = {
   completeSetupBtn: $('#completeSetupBtn'),
 
   toastRegion: $('#toastRegion'),
-  fallbackFileInput: $('#fallbackFileInput')
+  fallbackFileInput: $('#fallbackFileInput'),
+  modelFileInput: $('#modelFileInput')
 };
 
 const CapacitorRef = window.Capacitor;
@@ -93,6 +112,11 @@ let highlightProcessingActive = false;
 let swipeMode = null;
 let swipeSidebarCandidate = false;
 let pageSwipeOffset = 0;
+let sidebarSwipeStartX = null;
+let sidebarSwipeStartY = null;
+let sidebarSwipeDragging = false;
+let modelDownloadState = {};
+let currentModelPickKind = null;
 
 const appState = loadState();
 
@@ -104,7 +128,8 @@ function createDefaultState() {
       transcriptionMode: 'base',
       rememberSpeedPerBook: true,
       libraryFolderName: '',
-      highlightMode: 'verbatim'
+      highlightMode: 'verbatim',
+      models: defaultModelsState()
     },
     ui: {
       activeTab: 'player',
@@ -124,7 +149,8 @@ function loadState() {
       ...parsed,
       settings: {
         ...createDefaultState().settings,
-        ...(parsed.settings || {})
+        ...(parsed.settings || {}),
+        models: normalizeModelsState(parsed.settings?.models || parsed.models)
       },
       ui: {
         ...createDefaultState().ui,
@@ -137,6 +163,83 @@ function loadState() {
   } catch {
     return createDefaultState();
   }
+}
+
+
+function defaultModelsState() {
+  return {
+    whisper: {
+      activeId: 'whisper-base-en',
+      installed: {}
+    },
+    llm: {
+      activeId: 'llm-tinyllama',
+      installed: {}
+    }
+  };
+}
+
+function normalizeModelsState(models = {}) {
+  const defaults = defaultModelsState();
+  return {
+    whisper: {
+      ...defaults.whisper,
+      ...(models.whisper || {}),
+      installed: { ...(models.whisper?.installed || {}) }
+    },
+    llm: {
+      ...defaults.llm,
+      ...(models.llm || {}),
+      installed: { ...(models.llm?.installed || {}) }
+    }
+  };
+}
+
+function catalogForKind(kind) {
+  return MODEL_CATALOG[kind] || [];
+}
+
+function definitionForModel(kind, id) {
+  return catalogForKind(kind).find((item) => item.id === id) || null;
+}
+
+function getModelState(kind) {
+  if (!appState.settings.models) appState.settings.models = defaultModelsState();
+  if (!appState.settings.models[kind]) appState.settings.models[kind] = defaultModelsState()[kind];
+  if (!appState.settings.models[kind].installed) appState.settings.models[kind].installed = {};
+  return appState.settings.models[kind];
+}
+
+function sanitizeFolderName(name) {
+  return String(name || 'Earlighter Library').trim().replace(/[\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Earlighter Library';
+}
+
+function modelsRelativeDir() {
+  return `${sanitizeFolderName(appState.settings.libraryFolderName || 'Earlighter Library')}/models`;
+}
+
+function activeModelFor(kind) {
+  const state = getModelState(kind);
+  return state.installed?.[state.activeId] || definitionForModel(kind, state.activeId) || null;
+}
+
+function whisperModeFromModelId(id) {
+  if (id.includes('tiny')) return 'tiny';
+  if (id.includes('small')) return 'small';
+  return 'base';
+}
+
+function humanBytes(bytes = 0) {
+  const value = Number(bytes) || 0;
+  if (!value) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size.toFixed(size >= 100 || index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
 function migrateBook(book) {
@@ -266,6 +369,9 @@ function getDb() {
         if (!db.objectStoreNames.contains(STORE_BLOBS)) {
           db.createObjectStore(STORE_BLOBS, { keyPath: 'id' });
         }
+        if (!db.objectStoreNames.contains(STORE_MODEL_FILES)) {
+          db.createObjectStore(STORE_MODEL_FILES, { keyPath: 'id' });
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -330,6 +436,245 @@ async function readPickedFileAsBlob() {
     };
     el.fallbackFileInput.click();
   });
+}
+
+
+async function putModelBlob(id, blob) {
+  const db = await getDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_MODEL_FILES, 'readwrite');
+    tx.objectStore(STORE_MODEL_FILES).put({ id, blob });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function blobToBase64(blob) {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result || '').split(',').pop() || '');
+    reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function ensureModelsFolder() {
+  if (!Plugins.Filesystem?.mkdir) return;
+  await Plugins.Filesystem.mkdir({
+    directory: 'DATA',
+    path: modelsRelativeDir(),
+    recursive: true
+  }).catch(() => {});
+}
+
+async function writeBlobIntoModelsFolder(filename, blob, id) {
+  await ensureModelsFolder();
+  const cleanName = String(filename || `${id}.bin`).replace(/[^a-zA-Z0-9._-]+/g, '-');
+  const relativePath = `${modelsRelativeDir()}/${cleanName}`;
+  if (Plugins.Filesystem?.writeFile) {
+    const data = await blobToBase64(blob);
+    await Plugins.Filesystem.writeFile({
+      directory: 'DATA',
+      path: relativePath,
+      data,
+      recursive: true
+    });
+    let uri = null;
+    if (Plugins.Filesystem?.getUri) {
+      const info = await Plugins.Filesystem.getUri({ directory: 'DATA', path: relativePath }).catch(() => null);
+      uri = info?.uri || null;
+    }
+    return { relativePath, uri, sizeBytes: blob.size || 0 };
+  }
+  await putModelBlob(id, blob);
+  return { relativePath: `indexeddb://${id}`, uri: null, sizeBytes: blob.size || 0 };
+}
+
+async function readPickedModelAsBlob(kind) {
+  const accept = kind === 'whisper' ? '.bin,.en,.ggml' : '.gguf';
+  if (Plugins.FilePicker) {
+    try {
+      if (Plugins.FilePicker.requestPermissions) {
+        await Plugins.FilePicker.requestPermissions({ permissions: ['readExternalStorage'] }).catch(() => {});
+      }
+      const result = await Plugins.FilePicker.pickFiles({ limit: 1 });
+      const file = result.files?.[0];
+      if (!file) return null;
+      if (file.path && CapacitorRef?.convertFileSrc) {
+        const response = await fetch(CapacitorRef.convertFileSrc(file.path));
+        const blob = await response.blob();
+        return { blob, name: file.name || `${kind}-model`, size: file.size || blob.size };
+      }
+      if (file.data) {
+        const binary = atob(file.data);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) array[i] = binary.charCodeAt(i);
+        const blob = new Blob([array], { type: file.mimeType || 'application/octet-stream' });
+        return { blob, name: file.name || `${kind}-model`, size: file.size || blob.size };
+      }
+    } catch (error) {
+      console.warn('Model picker failed, using browser fallback.', error);
+    }
+  }
+  return await new Promise((resolve) => {
+    el.modelFileInput.accept = accept;
+    el.modelFileInput.value = '';
+    el.modelFileInput.onchange = () => {
+      const file = el.modelFileInput.files?.[0];
+      if (!file) return resolve(null);
+      resolve({ blob: file, name: file.name, size: file.size || 0 });
+    };
+    el.modelFileInput.click();
+  });
+}
+
+function saveInstalledModel(kind, meta) {
+  const state = getModelState(kind);
+  state.installed[meta.id] = meta;
+  state.activeId = meta.id;
+  if (kind === 'whisper') {
+    appState.settings.transcriptionMode = meta.mode || whisperModeFromModelId(meta.id);
+  }
+  persistState();
+  renderModels();
+}
+
+async function installManualModel(kind) {
+  if (!appState.settings.libraryFolderName.trim()) {
+    openLibrarySetup(true);
+    return;
+  }
+  const picked = await readPickedModelAsBlob(kind);
+  if (!picked) return;
+  const id = `${kind}-custom-${Date.now()}`;
+  const stored = await writeBlobIntoModelsFolder(picked.name, picked.blob, id);
+  saveInstalledModel(kind, {
+    id,
+    title: picked.name,
+    note: 'Selected from a file',
+    filename: picked.name,
+    source: 'manual',
+    storedPath: stored.relativePath,
+    storedUri: stored.uri,
+    sizeBytes: picked.size || stored.sizeBytes || 0,
+    sizeLabel: humanBytes(picked.size || stored.sizeBytes || 0),
+    mode: kind === 'whisper' ? appState.settings.transcriptionMode : null,
+    downloadedAt: Date.now()
+  });
+  showToast(`${kind === 'whisper' ? 'Whisper' : 'Notes AI'} file linked.`);
+}
+
+async function downloadModel(kind, modelId) {
+  const definition = definitionForModel(kind, modelId);
+  if (!definition) return;
+  if (!appState.settings.libraryFolderName.trim()) {
+    openLibrarySetup(true);
+    return;
+  }
+  const state = getModelState(kind);
+  if (state.installed?.[modelId]) {
+    state.activeId = modelId;
+    if (kind === 'whisper') appState.settings.transcriptionMode = definition.mode || whisperModeFromModelId(modelId);
+    persistState();
+    renderModels();
+    showToast(`${definition.title} is active.`);
+    return;
+  }
+
+  modelDownloadState[modelId] = { status: 'downloading', progress: 0 };
+  renderModels();
+  try {
+    await ensureModelsFolder();
+    let stored;
+    if (Plugins.FileTransfer?.downloadFile && Plugins.Filesystem?.getUri) {
+      const relativePath = `${modelsRelativeDir()}/${definition.filename}`;
+      const info = await Plugins.Filesystem.getUri({ directory: 'DATA', path: relativePath });
+      let progressHandle = null;
+      if (Plugins.FileTransfer.addListener) {
+        progressHandle = await Plugins.FileTransfer.addListener('progress', (progress) => {
+          const total = Number(progress.contentLength) || 0;
+          const pct = total > 0 ? Math.round((Number(progress.bytes || 0) / total) * 100) : 0;
+          modelDownloadState[modelId] = { status: 'downloading', progress: Math.max(4, Math.min(100, pct)) };
+          renderModels();
+        }).catch(() => null);
+      }
+      await Plugins.FileTransfer.downloadFile({ url: definition.url, path: info.uri, progress: true });
+      if (progressHandle?.remove) await progressHandle.remove().catch(() => {});
+      let stat = null;
+      if (Plugins.Filesystem?.stat) stat = await Plugins.Filesystem.stat({ directory: 'DATA', path: relativePath }).catch(() => null);
+      stored = { relativePath, uri: info.uri, sizeBytes: Number(stat?.size) || 0 };
+    } else {
+      const response = await fetch(definition.url);
+      if (!response.ok) throw new Error(`Download failed (${response.status}).`);
+      const blob = await response.blob();
+      stored = await writeBlobIntoModelsFolder(definition.filename, blob, definition.id);
+    }
+    saveInstalledModel(kind, {
+      ...definition,
+      source: 'download',
+      storedPath: stored.relativePath,
+      storedUri: stored.uri,
+      sizeBytes: stored.sizeBytes || 0,
+      downloadedAt: Date.now()
+    });
+    modelDownloadState[modelId] = { status: 'done', progress: 100 };
+    renderModels();
+    showToast(`${definition.title} downloaded.`);
+  } catch (error) {
+    console.error(error);
+    modelDownloadState[modelId] = { status: 'error', progress: 0 };
+    renderModels();
+    showToast(error?.message || 'Model download failed.');
+  }
+}
+
+function renderModelList(kind, container) {
+  if (!container) return;
+  const state = getModelState(kind);
+  const cards = catalogForKind(kind).map((definition) => {
+    const installed = state.installed?.[definition.id];
+    const downloadState = modelDownloadState[definition.id] || null;
+    const isActive = state.activeId === definition.id;
+    const status = installed ? (isActive ? 'Active' : 'Downloaded') : (downloadState?.status === 'downloading' ? 'Downloading…' : 'Not downloaded');
+    const actionLabel = installed ? (isActive ? 'Active' : 'Use') : (downloadState?.status === 'downloading' ? 'Downloading…' : 'Download');
+    return `
+      <article class="model-card ${installed ? 'installed' : ''} ${isActive ? 'active' : ''}">
+        <div class="model-card-copy">
+          <div class="model-card-eyebrow">${escapeHtml(definition.tier)}${definition.recommended ? ' <span class="model-rec">(recommended)</span>' : ''}</div>
+          <div class="model-card-title">${escapeHtml(definition.title)}</div>
+          <div class="model-card-note">${escapeHtml(definition.note)}</div>
+          <div class="model-card-meta">${escapeHtml(installed?.sizeLabel || definition.sizeLabel || '')}${status ? ` • ${escapeHtml(status)}` : ''}</div>
+          ${downloadState?.status === 'downloading' ? `<div class="model-progress"><span style="width:${downloadState.progress || 6}%"></span></div>` : ''}
+        </div>
+        <div class="model-card-actions">
+          <button class="model-action ${installed && isActive ? 'is-active' : ''}" type="button" data-model-action="${installed ? 'activate' : 'download'}" data-model-kind="${kind}" data-model-id="${definition.id}" ${downloadState?.status === 'downloading' ? 'disabled' : ''}>${actionLabel}</button>
+        </div>
+      </article>`;
+  }).join('');
+
+  const customItems = Object.values(state.installed || {}).filter((item) => String(item.id || '').startsWith(`${kind}-custom-`));
+  const custom = customItems.length ? customItems.map((item) => `
+      <article class="model-card active custom-model-card ${state.activeId === item.id ? 'active' : ''}">
+        <div class="model-card-copy">
+          <div class="model-card-eyebrow">Select a File</div>
+          <div class="model-card-title">${escapeHtml(item.title || item.filename || 'Custom file')}</div>
+          <div class="model-card-note">Saved inside ${escapeHtml(modelsRelativeDir())}</div>
+          <div class="model-card-meta">${escapeHtml(item.sizeLabel || humanBytes(item.sizeBytes || 0) || '')}${state.activeId === item.id ? ' • Active' : ' • Custom'}</div>
+        </div>
+        <div class="model-card-actions">
+          <button class="model-action ${state.activeId === item.id ? 'is-active' : ''}" type="button" data-model-action="activate" data-model-kind="${kind}" data-model-id="${item.id}">${state.activeId === item.id ? 'Active' : 'Use'}</button>
+        </div>
+      </article>`).join('') : '';
+
+  container.innerHTML = cards + custom;
+}
+
+function renderModels() {
+  if (el.modelFolderLabel) {
+    el.modelFolderLabel.textContent = `${sanitizeFolderName(appState.settings.libraryFolderName || 'Earlighter Library')}/models`;
+  }
+  renderModelList('whisper', el.whisperModelsList);
+  renderModelList('llm', el.llmModelsList);
 }
 
 async function getAudioDuration(blob) {
@@ -428,10 +773,12 @@ async function loadBook(bookId) {
 
 function openSidebar() {
   if (el.speedDialog?.open) return;
+  el.sidebar.style.transform = '';
   el.appRoot.classList.add('sidebar-open');
 }
 
 function closeSidebar() {
+  el.sidebar.style.transform = '';
   el.appRoot.classList.remove('sidebar-open');
 }
 
@@ -440,6 +787,7 @@ function setSidebarTab(tab, persist = true) {
   if (persist) persistState();
   el.sidebarTabs.forEach((button) => button.classList.toggle('active', button.dataset.sidebarTab === tab));
   el.libraryPanel.classList.toggle('active', tab === 'library');
+  el.modelsPanel?.classList.toggle('active', tab === 'models');
   el.settingsPanel.classList.toggle('active', tab === 'settings');
 }
 
@@ -485,7 +833,8 @@ function updateBookUI() {
   el.coverArt.textContent = book?.coverLabel || 'EA';
   el.coverHint.textContent = '';
   el.libraryFolderLabel.textContent = appState.settings.libraryFolderName.trim() || 'No library folder set yet';
-  el.transcriptionModeSelect.value = appState.settings.transcriptionMode;
+  if (el.modelFolderLabel) el.modelFolderLabel.textContent = `${sanitizeFolderName(appState.settings.libraryFolderName || 'Earlighter Library')}/models`;
+  if (el.transcriptionModeSelect) el.transcriptionModeSelect.value = appState.settings.transcriptionMode;
   el.rememberSpeedCheckbox.checked = !!appState.settings.rememberSpeedPerBook;
   if (el.highlightModeSelect) el.highlightModeSelect.value = appState.settings.highlightMode || 'verbatim';
   const speed = book?.speed || 1;
@@ -719,6 +1068,11 @@ function buildHighlightLinesFromText(rawText, mode = 'verbatim') {
 
 async function runOfflineHighlightProcessor(job) {
   const bridge = window.EarlighterOffline || Plugins.EarlighterOffline;
+  const activeWhisper = activeModelFor('whisper');
+  const activeLlm = activeModelFor('llm');
+  if (!activeWhisper?.storedPath || !activeLlm?.storedPath) {
+    throw new Error('Choose and install a Whisper model and a Notes AI model in Models first.');
+  }
   if (!bridge?.processHighlight) {
     throw new Error('Offline highlight runtime is not installed in this build.');
   }
@@ -729,7 +1083,13 @@ async function runOfflineHighlightProcessor(job) {
     endMs: job.line.endMs,
     clipSeconds: job.line.clipSeconds,
     transcriptionMode: appState.settings.transcriptionMode,
-    highlightMode: job.line.modelMode || appState.settings.highlightMode || 'verbatim'
+    highlightMode: job.line.modelMode || appState.settings.highlightMode || 'verbatim',
+    whisperModelPath: activeWhisper.storedPath,
+    whisperModelUri: activeWhisper.storedUri || null,
+    llmModelPath: activeLlm.storedPath,
+    llmModelUri: activeLlm.storedUri || null,
+    whisperModelId: activeWhisper.id,
+    llmModelId: activeLlm.id
   });
 }
 
@@ -937,6 +1297,7 @@ function saveClip(seconds) {
 function renderApp() {
   updateBookUI();
   renderLibrary();
+  renderModels();
   renderNotesDocument();
   updateProgressUI();
   setActiveTab(appState.ui.activeTab || 'player', false, true);
@@ -971,11 +1332,11 @@ function openLibrarySetup(force = false, mode = 'setup') {
   if (mode === 'rename') {
     el.libraryDialogTitle.textContent = 'Change library folder';
     el.libraryDialogSubtitle.textContent = 'Choose a new library folder name.';
-    el.libraryDialogWarning.textContent = 'Are you sure? This updates the library folder name used by Earlighter for future organization. Existing imported books already stored inside the app stay available.';
+    el.libraryDialogWarning.textContent = 'Are you sure? New model downloads will be saved into <folder>/models using this new name. Existing downloads already inside the app stay where they are unless you move them manually.';
     el.cancelLibraryDialogBtn.hidden = false;
   } else {
     el.libraryDialogTitle.textContent = 'Create your library folder';
-    el.libraryDialogSubtitle.textContent = 'Set this once before importing audiobooks.';
+    el.libraryDialogSubtitle.textContent = 'Set this once before importing audiobooks. Model downloads will be saved in a models subfolder inside it.';
     el.libraryDialogWarning.textContent = '';
     el.cancelLibraryDialogBtn.hidden = true;
   }
@@ -995,6 +1356,10 @@ function clearDragPreview() {
     row.classList.remove('drag-preview', 'drag-preview-before', 'drag-preview-after');
     row.style.removeProperty('--preview-indent');
   });
+}
+
+function targetIsInteractive(target) {
+  return !!target?.closest?.('textarea, input, select, dialog, .sheet-card, .speed-card');
 }
 
 function bindEvents() {
@@ -1098,23 +1463,47 @@ function bindEvents() {
 
   window.addEventListener('resize', () => applyViewTransform(true, 0));
 
-  el.sidebar.addEventListener('touchstart', (event) => {
+  document.addEventListener('touchstart', (event) => {
+    if (!el.appRoot.classList.contains('sidebar-open') || el.speedDialog?.open) return;
+    if (targetIsInteractive(event.target)) return;
     const touch = event.touches[0];
-    swipeStartX = touch.clientX;
-    swipeStartY = touch.clientY;
+    sidebarSwipeStartX = touch.clientX;
+    sidebarSwipeStartY = touch.clientY;
+    sidebarSwipeDragging = false;
   }, { passive: true });
 
-  el.sidebar.addEventListener('touchmove', (event) => {
-    if (swipeStartX == null || swipeStartY == null) return;
+  document.addEventListener('touchmove', (event) => {
+    if (!el.appRoot.classList.contains('sidebar-open') || sidebarSwipeStartX == null || sidebarSwipeStartY == null || el.speedDialog?.open) return;
     const touch = event.touches[0];
-    const dx = touch.clientX - swipeStartX;
-    const dy = Math.abs(touch.clientY - swipeStartY);
-    if (dx < -50 && dy < 32) closeSidebar();
-  }, { passive: true });
+    const dx = touch.clientX - sidebarSwipeStartX;
+    const dy = touch.clientY - sidebarSwipeStartY;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    if (!sidebarSwipeDragging) {
+      if (absDx < 8) return;
+      if (absDy > absDx + 6) return;
+      if (dx >= 0) return;
+      sidebarSwipeDragging = true;
+    }
+    if (!sidebarSwipeDragging) return;
+    event.preventDefault();
+    el.sidebar.style.transform = `translateX(${Math.min(0, dx)}px)`;
+  }, { passive: false });
 
-  el.sidebar.addEventListener('touchend', () => {
-    swipeStartX = null;
-    swipeStartY = null;
+  document.addEventListener('touchend', () => {
+    if (sidebarSwipeDragging && el.appRoot.classList.contains('sidebar-open')) {
+      const computed = el.sidebar.style.transform || '';
+      const match = computed.match(/translateX\((-?\d+(?:\.\d+)?)px\)/);
+      const shift = match ? Number(match[1]) : 0;
+      if (shift <= -40) {
+        closeSidebar();
+      } else {
+        el.sidebar.style.transform = '';
+      }
+    }
+    sidebarSwipeStartX = null;
+    sidebarSwipeStartY = null;
+    sidebarSwipeDragging = false;
   }, { passive: true });
 
   el.sidebarTabs.forEach((button) => {
@@ -1143,10 +1532,35 @@ function bindEvents() {
   });
 
   el.changeLibraryFolderBtn.addEventListener('click', () => openLibrarySetup(true, 'rename'));
-  el.transcriptionModeSelect.addEventListener('change', () => {
+  el.transcriptionModeSelect?.addEventListener('change', () => {
     appState.settings.transcriptionMode = el.transcriptionModeSelect.value;
     persistState();
     showToast('Transcription quality updated.');
+  });
+
+  el.modelsPanel?.addEventListener('click', async (event) => {
+    const pickerButton = event.target.closest('[data-model-picker]');
+    if (pickerButton) {
+      await installManualModel(pickerButton.dataset.modelPicker);
+      return;
+    }
+    const actionButton = event.target.closest('[data-model-action]');
+    if (!actionButton) return;
+    const kind = actionButton.dataset.modelKind;
+    const modelId = actionButton.dataset.modelId;
+    const action = actionButton.dataset.modelAction;
+    if (action === 'download') {
+      await downloadModel(kind, modelId);
+      return;
+    }
+    if (action === 'activate') {
+      const state = getModelState(kind);
+      state.activeId = modelId;
+      if (kind === 'whisper') appState.settings.transcriptionMode = definitionForModel(kind, modelId)?.mode || whisperModeFromModelId(modelId);
+      persistState();
+      renderModels();
+      showToast('Model switched.');
+    }
   });
   el.rememberSpeedCheckbox.addEventListener('change', () => {
     appState.settings.rememberSpeedPerBook = el.rememberSpeedCheckbox.checked;
@@ -1168,8 +1582,10 @@ function bindEvents() {
     }
     appState.settings.libraryFolderName = folderName;
     persistState();
+    ensureModelsFolder();
     el.librarySetupDialog.close();
     updateBookUI();
+    renderModels();
     showToast(libraryDialogMode === 'rename' ? 'Library folder updated.' : 'Library folder created.');
   });
 
@@ -1359,6 +1775,8 @@ async function init() {
   renderApp();
   if (!appState.settings.libraryFolderName.trim()) {
     openLibrarySetup(true);
+  } else {
+    ensureModelsFolder();
   }
   if (appState.lastBookId) {
     await loadBook(appState.lastBookId);
